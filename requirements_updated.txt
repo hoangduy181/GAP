@@ -5,6 +5,7 @@
 # Core dependencies
 torch>=1.8.0
 torchvision>=0.9.0
+torchpack>=0.2.2
 numpy>=1.21.0,<2.0.0
 scipy>=1.7.0
 
@@ -12,9 +13,11 @@ scipy>=1.7.0
 PyYAML>=5.4.1
 tqdm>=4.60.0
 easydict>=1.9
+ftfy>=6.0.0
 
 # Logging and visualization
 tensorboard>=2.8.0
+tensorboardX>=2.1
 
 # Scientific computing
 scikit-learn>=0.24.0
