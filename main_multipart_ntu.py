@@ -26,7 +26,7 @@ import yaml
 try:
     from torch.utils.tensorboard import SummaryWriter
 except ImportError:
-    from tensorboardX import SummaryWriter
+from tensorboardX import SummaryWriter
 from tqdm import tqdm
 
 from torchlight import DictAction

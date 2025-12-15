@@ -75,7 +75,7 @@ default_arg = yaml.safe_load(f)  # SAFE
 - `feeders/feeder_ucla.py` (line 126) - Actually OK, uses `int` which is correct
 - `feeders/tools.py` (line 48-49) - Uses division `/` which is fine for numpy arrays
 
-**Note**: The code uses `astype(int)` which is correct. `np.int` was deprecated, but `int` is fine.
+**Note**: The code uses `astype(int)` which is correct. `int` was deprecated, but `int` is fine.
 
 ### 5. Division Operator in Python 2 vs 3
 
