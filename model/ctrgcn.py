@@ -4,7 +4,6 @@ import pdb
 import numpy as np
 import torch
 import torch.nn as nn
-from torch.autograd import Variable
 import clip
 from Text_Prompt import *
 from tools import *
@@ -232,7 +231,7 @@ class unit_gcn(nn.Module):
         if self.adaptive:
             self.PA = nn.Parameter(torch.from_numpy(A.astype(np.float32)))
         else:
-            self.A = Variable(torch.from_numpy(A.astype(np.float32)), requires_grad=False)
+            self.A = torch.from_numpy(A.astype(np.float32))
         self.alpha = nn.Parameter(torch.zeros(1))
         self.bn = nn.BatchNorm2d(out_channels)
         self.soft = nn.Softmax(-2)
@@ -250,7 +249,7 @@ class unit_gcn(nn.Module):
         if self.adaptive:
             A = self.PA
         else:
-            A = self.A.cuda(x.get_device())
+            A = self.A.to(x.device)
         for i in range(self.num_subset):
             z = self.convs[i](x, A[i], self.alpha)
             y = z + y if y is not None else z

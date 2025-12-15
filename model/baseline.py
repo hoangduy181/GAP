@@ -3,7 +3,6 @@ import math
 import numpy as np
 import torch
 import torch.nn as nn
-from torch.autograd import Variable
 import clip
 from Text_Prompt import *
 # from KLLoss import KLLoss
@@ -67,7 +66,7 @@ class unit_gcn(nn.Module):
         if adaptive:
             self.PA = nn.Parameter(torch.from_numpy(A.astype(np.float32)), requires_grad=True)
         else:
-            self.A = Variable(torch.from_numpy(A.astype(np.float32)), requires_grad=False)
+            self.A = torch.from_numpy(A.astype(np.float32))
 
         self.conv_d = nn.ModuleList()
         for i in range(self.num_subset):
@@ -107,7 +106,7 @@ class unit_gcn(nn.Module):
             A = self.PA
             A = self.L2_norm(A)
         else:
-            A = self.A.cuda(x.get_device())
+            A = self.A.to(x.device)
         for i in range(self.num_subset):
 
             A1 = A[i]
