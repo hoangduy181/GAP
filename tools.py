@@ -2,7 +2,8 @@ import numpy
 
 def gen_label(labels):
     num = len(labels)
-    gt = numpy.zeros(shape=(num,num))
+    # Use C-contiguous array for better memory alignment
+    gt = numpy.zeros(shape=(num,num), order='C')
     for i, label in enumerate(labels):
         for k in range(num):
             if labels[k] == label:

@@ -319,7 +319,9 @@ class Processor():
         self.model_text_dict = nn.ModuleDict()
 
         for name in self.arg.model_args['head']:
-            model_, preprocess = clip.load(name, device)
+            # Use output_device for DataParallel compatibility
+            clip_device = torch.device(f'cuda:{self.output_device}' if torch.cuda.is_available() else 'cpu')
+            model_, preprocess = clip.load(name, clip_device)
             del model_.visual
             model_text = TextCLIP(model_)
             model_text = model_text.cuda(self.output_device)
@@ -457,8 +459,9 @@ class Processor():
                 for ind in range(num_text_aug):
                     if ind > 0:
                         text_id = np.ones(len(label),dtype=np.int8) * ind
-                        texts = torch.stack([text_dict[j][i,:] for i,j in zip(label,text_id)])
-                        texts = texts.cuda(self.output_device)
+                        # Ensure tensors are contiguous before stacking
+                        text_tensors = [text_dict[j][i,:].contiguous() for i,j in zip(label,text_id)]
+                        texts = torch.stack(text_tensors).cuda(self.output_device).contiguous()
 
                     else:
 
@@ -469,7 +472,9 @@ class Processor():
                             text_item = text_list[label[i]][text_id.item()]
                             texts.append(text_item)
                     
-                        texts = torch.cat(texts).cuda(self.output_device)
+                        # Ensure tensors are contiguous before concatenating
+                        texts = [t.contiguous() if isinstance(t, torch.Tensor) else t for t in texts]
+                        texts = torch.cat(texts).cuda(self.output_device).contiguous()
 
                     text_embedding = self.model_text_dict[self.arg.model_args['head'][0]](texts).float()
 
@@ -477,11 +482,17 @@ class Processor():
                     if ind == 0:
                         logits_per_image, logits_per_text = create_logits(feature_dict[self.arg.model_args['head'][0]],text_embedding,logit_scale[:,0].mean())
 
-                        ground_truth = torch.tensor(label_g,dtype=feature_dict[self.arg.model_args['head'][0]].dtype,device=device)
+                        # Use from_numpy for better memory alignment, ensure C-contiguous
+                        # Use self.output_device instead of global device for DataParallel compatibility
+                        label_g_contiguous = np.ascontiguousarray(label_g)
+                        ground_truth = torch.from_numpy(label_g_contiguous).to(dtype=feature_dict[self.arg.model_args['head'][0]].dtype, device=self.output_device).contiguous()
                     else:
                         logits_per_image, logits_per_text = create_logits(part_feature_list[ind-1],text_embedding,logit_scale[:,ind].mean())
 
-                        ground_truth = torch.tensor(label_g,dtype=part_feature_list[ind-1].dtype,device=device)
+                        # Use from_numpy for better memory alignment, ensure C-contiguous
+                        # Use self.output_device instead of global device for DataParallel compatibility
+                        label_g_contiguous = np.ascontiguousarray(label_g)
+                        ground_truth = torch.from_numpy(label_g_contiguous).to(dtype=part_feature_list[ind-1].dtype, device=self.output_device).contiguous()
 
 
                     loss_imgs = self.loss(logits_per_image,ground_truth)
@@ -495,6 +506,10 @@ class Processor():
             scaler.scale(loss).backward()
             scaler.step(self.optimizer)
             scaler.update()
+            
+            # Clear cache to prevent memory fragmentation
+            if self.global_step % 100 == 0:
+                torch.cuda.empty_cache()
 
             loss_value.append(loss.data.item())
             timer['model'] += self.split_time()
