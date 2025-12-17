@@ -76,6 +76,8 @@ class TemporalConv(nn.Module):
         self.bn = nn.BatchNorm2d(out_channels)
 
     def forward(self, x):
+        # Ensure input tensor is contiguous to avoid CUDA misaligned address errors
+        x = x.contiguous()
         x = self.conv(x)
         x = self.bn(x)
         return x
@@ -148,6 +150,8 @@ class MultiScale_TemporalConv(nn.Module):
 
     def forward(self, x):
         # Input dim: (N,C,T,V)
+        # Ensure input tensor is contiguous to avoid CUDA misaligned address errors
+        x = x.contiguous()
         res = self.residual(x)
         branch_outs = []
         for tempconv in self.branches:
@@ -182,6 +186,8 @@ class CTRGC(nn.Module):
                 bn_init(m, 1)
 
     def forward(self, x, A=None, alpha=1):
+        # Ensure input tensor is contiguous to avoid CUDA misaligned address errors
+        x = x.contiguous()
         x1, x2, x3 = self.conv1(x).mean(-2), self.conv2(x).mean(-2), self.conv3(x)
         x1 = self.tanh(x1.unsqueeze(-1) - x2.unsqueeze(-2))
         x1 = self.conv4(x1) * alpha + (A.unsqueeze(0).unsqueeze(0) if A is not None else 0)  # N,C,V,V   N,T,V,V
@@ -201,6 +207,8 @@ class unit_tcn(nn.Module):
         bn_init(self.bn, 1)
 
     def forward(self, x):
+        # Ensure input tensor is contiguous to avoid CUDA misaligned address errors
+        x = x.contiguous()
         x = self.bn(self.conv(x))
         return x
 
@@ -245,6 +253,8 @@ class unit_gcn(nn.Module):
         bn_init(self.bn, 1e-6)
 
     def forward(self, x):
+        # Ensure input tensor is contiguous to avoid CUDA misaligned address errors
+        x = x.contiguous()
         y = None
         if self.adaptive:
             A = self.PA
@@ -279,6 +289,8 @@ class TCN_GCN_unit(nn.Module):
             self.residual = unit_tcn(in_channels, out_channels, kernel_size=1, stride=stride)
 
     def forward(self, x):
+        # Ensure input tensor is contiguous to avoid CUDA misaligned address errors
+        x = x.contiguous()
         y = self.relu(self.tcn1(self.gcn1(x)) + self.residual(x))
         return y
 
