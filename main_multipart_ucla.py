@@ -630,7 +630,8 @@ class Processor():
                         print("DBG: ______AFTER CUDA CALL_____")
                         print(f"DBG: data.shape={data.shape}, data.device={data.device}")
                         print(f"DBG: model device check: {next(self.model.parameters()).device if hasattr(self.model, 'parameters') else 'N/A'}")
-                        output, _, _, _ = self.model(data)
+                        with torch.cuda.amp.autocast():
+                            output, _, _, _ = self.model(data)
                         print("DBG: ______AFTER MODEL CALL_____")
                     except RuntimeError as e:
                         print(f"ERROR in model forward: {e}")
