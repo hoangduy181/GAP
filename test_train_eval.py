@@ -137,6 +137,9 @@ def main():
     # Set environment variable for CUDA memory management
     os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
     
+    # Enable CUDA device-side assertions for debugging
+    os.environ['TORCH_USE_CUDA_DSA'] = '1'
+    
     config_path = args.config
     work_dir = args.work_dir
     

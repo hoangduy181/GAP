@@ -124,6 +124,16 @@ python main_multipart_ntu.py --config <work_dir>/config.yaml --work-dir <work_di
 python ensemble.py --datasets ntu120/xsub --joint-dir work_dir/ntu120/csub/lst_joint --bone-dir work_dir/ntu120/csub/lst_bone --joint-motion-dir work_dir/ntu120/csub/lst_joint_vel --bone-motion-dir work_dir/ntu120/csub/lst_bone_vel
 ```
 
+### Debugging
+
+- To enable CUDA device-side assertions for debugging CUDA kernels, set the `TORCH_USE_CUDA_DSA` environment variable:
+```
+export TORCH_USE_CUDA_DSA=1
+python main_multipart_ntu.py --config <config> --model <model> --work-dir <work_dir> --device 0
+```
+
+Note: This flag is automatically enabled in the test scripts (`test_train_eval.sh` and `test_train_eval.py`).
+
 ## Acknowledgements
 
 This repo is based on [CTR-GCN](https://github.com/Uason-Chen/CTR-GCN). The data processing is borrowed from [SGN](https://github.com/microsoft/SGN) and [HCN](https://github.com/huguyuehuhu/HCN-pytorch). The code for different modality is adopted from [InfoGCN](https://github.com/stnoah1/infogcn). The implementation for contrastive loss is adopted from [ActionCLIP](https://github.com/sallymmx/ActionCLIP).

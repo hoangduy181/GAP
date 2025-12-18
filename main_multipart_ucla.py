@@ -271,11 +271,6 @@ class Processor():
                     device_ids=self.arg.device,
                     output_device=self.output_device)
 
-        
-
-
-
-
         if type(self.arg.device) is list:
             if len(self.arg.device) > 1:
                 for name in self.arg.model_args['head']:
@@ -283,7 +278,6 @@ class Processor():
                         self.model_text_dict[name],
                         device_ids=self.arg.device,
                         output_device=self.output_device)
-        
         
 
     def load_data(self):
@@ -306,6 +300,9 @@ class Processor():
             worker_init_fn=init_seed)
 
     def load_model(self):
+        print("=========== DEBUG =================")
+        print("self.arg.device: ", self.arg.device)
+        print("=========== DEBUG =================")
         output_device = self.arg.device[0] if type(self.arg.device) is list else self.arg.device
         self.output_device = output_device
         Model = import_class(self.arg.model)
@@ -544,6 +541,10 @@ class Processor():
             torch.save(weights, self.arg.model_saved_name + '-' + str(epoch+1) + '-' + str(int(self.global_step)) + '.pt')
 
     def eval(self, epoch, save_score=False, loader_name=['test'], wrong_file=None, result_file=None):
+        print("=========== DEBUG =================")
+        print("loader_name: ", loader_name)
+        print("=========== DEBUG =================")
+        print("=========== DEBUG =================")
         if wrong_file is not None:
             f_w = open(wrong_file, 'w')
         if result_file is not None:
@@ -563,6 +564,7 @@ class Processor():
                 label_list.append(label)
                 with torch.no_grad():
                     b, _, _, _, _ = data.size()
+                    print("self.output_device: ", self.output_device)
                     data = data.float().cuda(self.output_device)
                     label = label.long().cuda(self.output_device)
                     

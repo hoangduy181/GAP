@@ -13,6 +13,9 @@ python3 -c "import torch; print(f'CUDA available: {torch.cuda.is_available()}');
 # Set environment variable for CUDA memory management
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
+# Enable CUDA device-side assertions for debugging
+export TORCH_USE_CUDA_DSA=1
+
 # Test config path
 CONFIG="config/test_minimal.yaml"
 WORK_DIR="work_dir/test_run"
