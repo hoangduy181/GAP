@@ -342,9 +342,10 @@ class Processor():
         print("=========== DEBUG =================")
         output_device = self.arg.device[0] if type(self.arg.device) is list else self.arg.device
         self.output_device = output_device
+        print("DBG: ______BEFORE MODEL IMPORT_____", self.arg.model)
         Model = import_class(self.arg.model)
         shutil.copy2(inspect.getfile(Model), self.arg.work_dir)
-        print(Model)
+        # print(Model)
         self.model = Model(**self.arg.model_args)
         print(self.model)
         self.loss_ce = nn.CrossEntropyLoss().cuda(output_device)

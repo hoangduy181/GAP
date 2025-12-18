@@ -365,6 +365,7 @@ class Model(nn.Module):
 class Model_lst_4part(nn.Module):
     def __init__(self, num_class=60, num_point=25, num_person=2, graph=None, graph_args=dict(), in_channels=3,
                  drop_out=0, adaptive=True, head=['ViT-B/32'], k=0):
+        print("Model_lst_4part ---- __init__")
         super(Model_lst_4part, self).__init__()
 
         if graph is None:
@@ -434,6 +435,8 @@ class Model_lst_4part(nn.Module):
         else:
             self.drop_out = lambda x: x
 
+        print("Model_lst_4part ---- __init__")
+
     def get_A(self, graph, k):
         Graph = import_class(graph)()
         A_outward = Graph.A_outward_binary
@@ -443,6 +446,7 @@ class Model_lst_4part(nn.Module):
         return  torch.from_numpy(I - np.linalg.matrix_power(A_outward, k))
 
     def forward(self, x):
+        print("Model_lst_4part ---- forward ---- x.shape: ", x.shape)
         if len(x.shape) == 3:
             N, T, VC = x.shape
             x = x.view(N, T, self.num_point, -1).permute(0, 3, 1, 2).contiguous().unsqueeze(-1)
@@ -468,10 +472,15 @@ class Model_lst_4part(nn.Module):
         c_new = x.size(1)
 
         feature = x.view(N,M,c_new,T//4,V)
-        head_list = torch.Tensor([2,3,20]).long()
-        hand_list = torch.Tensor([4,5,6,7,8,9,10,11,21,22,23,24]).long()
-        foot_list = torch.Tensor([12,13,14,15,16,17,18,19]).long()
-        hip_list = torch.Tensor([0,1,2,12,16]).long()
+        # head_list = torch.Tensor([2,3,20]).long()
+        # hand_list = torch.Tensor([4,5,6,7,8,9,10,11,21,22,23,24]).long()
+        # foot_list = torch.Tensor([12,13,14,15,16,17,18,19]).long()
+        # hip_list = torch.Tensor([0,1,2,12,16]).long()
+        device = x.device
+        head_list = torch.tensor([2,3], dtype=torch.long, device=device)
+        hand_list = torch.tensor([10,11,6,7,8,9,4,5], dtype=torch.long, device=device)
+        foot_list = torch.tensor([16,17,18,19,12,13,14,15], dtype=torch.long, device=device)
+        hip_list = torch.tensor([0,1,12,16], dtype=torch.long, device=device)
         head_feature = self.part_list[0](feature[:,:,:,:,head_list].mean(4).mean(3).mean(1))
         hand_feature = self.part_list[1](feature[:,:,:,:,hand_list].mean(4).mean(3).mean(1))
         foot_feature = self.part_list[2](feature[:,:,:,:,foot_list].mean(4).mean(3).mean(1))
@@ -622,7 +631,7 @@ class Model_lst_4part_ucla(nn.Module):
     def __init__(self, num_class=60, num_point=25, num_person=2, graph=None, graph_args=dict(), in_channels=3,
                  drop_out=0, adaptive=True, head=['ViT-B/32'], k=1):
         super(Model_lst_4part_ucla, self).__init__()
-
+        print("Model_lst_4part_ucla ---- __init__")
         if graph is None:
             raise ValueError()
         else:
@@ -724,12 +733,14 @@ class Model_lst_4part_ucla(nn.Module):
 
         # N*M,C,T,V
         c_new = x.size(1)
-
+        print("Model_lst_4part_ucla ---- forward ---- c_new: ", c_new.shape)
         feature = x.view(N,M,c_new,T//4,V)
-        head_list = torch.Tensor([2,3]).long()
-        hand_list = torch.Tensor([10,11,6,7,8,9,4,5]).long()
-        foot_list = torch.Tensor([16,17,18,19,12,13,14,15]).long()
-        hip_list = torch.Tensor([0,1,12,16]).long()
+        device = x.device
+        print("Model_lst_4part_ucla ---- forward ---- device: ", device)
+        head_list = torch.tensor([2,3], dtype=torch.long, device=device)
+        hand_list = torch.tensor([10,11,6,7,8,9,4,5], dtype=torch.long, device=device)
+        foot_list = torch.tensor([16,17,18,19,12,13,14,15], dtype=torch.long, device=device)
+        hip_list = torch.tensor([0,1,12,16], dtype=torch.long, device=device)
         head_feature = self.part_list[0](feature[:,:,:,:,head_list].mean(4).mean(3).mean(1))
         hand_feature = self.part_list[1](feature[:,:,:,:,hand_list].mean(4).mean(3).mean(1))
         foot_feature = self.part_list[2](feature[:,:,:,:,foot_list].mean(4).mean(3).mean(1))
