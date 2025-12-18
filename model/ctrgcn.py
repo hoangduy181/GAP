@@ -263,7 +263,7 @@ class unit_gcn(nn.Module):
         else:
             # self.A is registered as a buffer, so DataParallel already places it on the correct device
             # No need to call .to(x.device) which can cause issues in eval mode with DataParallel
-            A = self.A
+            A = self.A.to(x.device)
         for i in range(self.num_subset):
             z = self.convs[i](x, A[i], self.alpha)
             y = z + y if y is not None else z
