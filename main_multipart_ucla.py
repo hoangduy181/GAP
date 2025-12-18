@@ -275,9 +275,9 @@ class Processor():
 
 
         if type(self.arg.device) is list:
-            print("DBG: ______BEFORE DATA PARALLEL_____")
+            # print("DBG: ______BEFORE DATA PARALLEL_____")
             if len(self.arg.device) > 1:
-                print("DBG: ______INSIDE DATA PARALLEL IF LOOP_____")
+                # print("DBG: ______INSIDE DATA PARALLEL IF LOOP_____")
                 self.model = nn.DataParallel(
                     self.model,
                     device_ids=self.arg.device,  # List of GPU IDs to use (e.g., [0, 1])
@@ -288,7 +288,7 @@ class Processor():
         # Each text encoder (one per CLIP head) also needs to be wrapped for multi-GPU training.
         # This ensures text embeddings are computed in parallel across GPUs, matching the visual model.
         if type(self.arg.device) is list:
-            print("DBG: ______INSIDE TEXT ENCODER DATA PARALLEL IF LOOP_____")
+            # print("DBG: ______INSIDE TEXT ENCODER DATA PARALLEL IF LOOP_____")
             if len(self.arg.device) > 1:
                 # Validate that 'head' key exists in model_args to avoid KeyError
                 if 'head' not in self.arg.model_args:
@@ -618,21 +618,21 @@ class Processor():
             print("DBG: ______AFTER TQDM_____")
             print("DBG: ______BEFORE FOR LOOP_____")
             for batch_idx, (data, label, index) in enumerate(process):
-                print("DBG: ______INSIDE FOR LOOP_____", batch_idx)
+                # print("DBG: ______INSIDE FOR LOOP_____", batch_idx)
                 label_list.append(label)
-                print("DBG: self.output_device: ", self.output_device)
+                # print("DBG: self.output_device: ", self.output_device)
                 with torch.no_grad():
                     b, _, _, _, _ = data.size()
                     data = data.float().cuda(self.output_device)
                     label = label.long().cuda(self.output_device)
-                    print("DBG: ______AFTER CUDA CALL_____")
+                    # print("DBG: ______AFTER CUDA CALL_____")
                     try:
-                        print("DBG: ______AFTER CUDA CALL_____")
+                        # print("DBG: ______AFTER CUDA CALL_____")
                         print(f"DBG: data.shape={data.shape}, data.device={data.device}")
                         print(f"DBG: model device check: {next(self.model.parameters()).device if hasattr(self.model, 'parameters') else 'N/A'}")
-                        with torch.cuda.amp.autocast():
-                            output, _, _, _ = self.model(data)
-                        print("DBG: ______AFTER MODEL CALL_____")
+                        # with torch.cuda.amp.autocast():
+                        output, _, _, _ = self.model(data)
+                        # print("DBG: ______AFTER MODEL CALL_____")
                     except RuntimeError as e:
                         print(f"ERROR in model forward: {e}")
                         print(f"Data shape: {data.shape}, device: {data.device}")
@@ -640,14 +640,14 @@ class Processor():
                             print(f"DataParallel device_ids: {self.model.device_ids}")
                             print(f"DataParallel output_device: {self.model.output_device}")
                         raise
-                    print("DBG: ______AFTER MODEL CALL_____")
+                    # print("DBG: ______AFTER MODEL CALL_____")
                     loss = self.loss_ce(output, label)
 
                     score_frag.append(output.data.cpu().numpy())
                     loss_value.append(loss.data.item())
 
                     _, predict_label = torch.max(output.data, 1)
-                    print("DBG: ______AFTER MAX CALL_____")
+                    # print("DBG: ______AFTER MAX CALL_____")
                     pred_list.append(predict_label.data.cpu().numpy())
                     step += 1
                     print("DBG: ______AFTER STEP INCREMENT_____")

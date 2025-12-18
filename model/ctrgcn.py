@@ -450,7 +450,7 @@ class Model_lst_4part(nn.Module):
         return  torch.from_numpy(I - np.linalg.matrix_power(A_outward, k))
 
     def forward(self, x):
-        print("Model_lst_4part ---- forward ---- x.shape: ", x.shape)
+        # print("Model_lst_4part ---- forward ---- x.shape: ", x.shape)
         if len(x.shape) == 3:
             N, T, VC = x.shape
             x = x.view(N, T, self.num_point, -1).permute(0, 3, 1, 2).contiguous().unsqueeze(-1)
@@ -738,10 +738,10 @@ class Model_lst_4part_ucla(nn.Module):
 
         # N*M,C,T,V
         c_new = x.size(1)
-        print("Model_lst_4part_ucla ---- forward ---- c_new: ", c_new)
+        # print("Model_lst_4part_ucla ---- forward ---- c_new: ", c_new)
         feature = x.view(N,M,c_new,T//4,V)
         device = x.device
-        print("Model_lst_4part_ucla ---- forward ---- device: ", device)
+        # print("Model_lst_4part_ucla ---- forward ---- device: ", device)
         head_list = torch.tensor([2,3], dtype=torch.long, device=device)
         hand_list = torch.tensor([10,11,6,7,8,9,4,5], dtype=torch.long, device=device)
         foot_list = torch.tensor([16,17,18,19,12,13,14,15], dtype=torch.long, device=device)
