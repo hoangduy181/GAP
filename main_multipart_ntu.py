@@ -469,7 +469,7 @@ class Processor():
             self.optimizer.zero_grad()
 
             # forward
-            with torch.cuda.amp.autocast():
+            with torch.amp.autocast():
                 output, feature_dict, logit_scale, part_feature_list = self.model(data)
 
                 label_g = gen_label(label)
@@ -588,7 +588,7 @@ class Processor():
                     data = data.float().cuda(self.output_device)
                     label = label.long().cuda(self.output_device)
                     try:
-                        with torch.cuda.amp.autocast():
+                        with torch.amp.autocast():
                             output, _, _, _ = self.model(data)
                     except RuntimeError as e:
                         print(f"ERROR in model forward: {e}")
