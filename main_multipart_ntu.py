@@ -469,8 +469,7 @@ class Processor():
             self.optimizer.zero_grad()
 
             # forward
-            # with torch.amp.autocast():
-            with torch.cuda.amp.autocast():
+            with torch.amp.autocast():
                 output, feature_dict, logit_scale, part_feature_list = self.model(data)
 
                 label_g = gen_label(label)
@@ -589,8 +588,7 @@ class Processor():
                     data = data.float().cuda(self.output_device)
                     label = label.long().cuda(self.output_device)
                     try:
-                        # with torch.amp.autocast():
-                        with torch.cuda.amp.autocast():
+                        with torch.amp.autocast():
                             output, _, _, _ = self.model(data)
                     except RuntimeError as e:
                         print(f"ERROR in model forward: {e}")
@@ -721,37 +719,11 @@ if __name__ == '__main__':
         key = vars(p).keys()
         for k in default_arg.keys():
             if k not in key:
-                     
-            # Determine starting epoch: checkpoint > start_epoch argument
-            if hasattr(self, 'checkpoint_epoch') and self.checkpoint_epoch is not None:
-                start_epoch = self.checkpoint_epoch
-                self.print_log('Resuming training from epoch {} (from checkpoint)'.format(start_epoch))
-            else:
-                start_epoch = self.arg.start_epoch
-                self.print_log('Starting training from epoch {}'.format(start_epoch))
-            
-            # Update global_step if not set from checkpoint
-            if self.global_step == 0 and start_epoch > 0:
-                self.global_step = int(start_epoch * len(self.data_loader['train']) / self.arg.batch_size)
-            elif hasattr(self, 'checkpoint_epoch') and self.checkpoint_epoch is not None:
-                # If we loaded from checkpoint, global_step should already be set
-                # But recalculate if data_loader size is available for accuracy
-                if hasattr(self, 'data_loader') and 'train' in self.data_loader:
-                    estimated_step = int(start_epoch * len(self.data_loader['train']) / self.arg.batch_size)
-                    if abs(self.global_step - estimated_step) > len(self.data_loader['train']):
-                        # If difference is more than one epoch, use estimated
-                        self.global_step = estimated_step
-            
-            def count_parameters(model):
-                return sum(p.numel() for p in model.parameters() if p.requires_grad)
-            self.print_log(f'# Parameters: {count_parameters(self.model)}')
-            
-            for epoch in range(start_epoch, self.arg.num_epoch):
-            checkpoint = torch.load(weights_path, map_location='cpu')
-            
-            # Handle both old format (just weights) and new format (full checkpoint)
-            if isinstance(checkpoint, dict) and 'model' in checkpoint:
-                weights = checkpoint['model']
-            else:
-                weights = checkpoint
-            
+                print('WRONG ARG: {}'.format(k))
+                assert (k in key)
+        parser.set_defaults(**default_arg)
+
+    arg = parser.parse_args()
+    init_seed(arg.seed)
+    processor = Processor(arg)
+    processor.start()
