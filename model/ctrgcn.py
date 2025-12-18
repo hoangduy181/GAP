@@ -375,7 +375,7 @@ class Model_lst_4part(nn.Module):
             self.graph = Graph(**graph_args)
 
         A = self.graph.A # 3,25,25
-        self.A_vector = self.get_A(graph, k).float()
+        self.register_buffer('A_vector', self.get_A(graph, k).float())
 
 
         self.num_class = num_class
@@ -512,7 +512,7 @@ class Model_lst_4part_bone(nn.Module):
             self.graph = Graph(**graph_args)
 
         A = self.graph.A # 3,25,25
-        self.A_vector = self.get_A(graph, k).float()
+        self.register_buffer('A_vector', self.get_A(graph, k).float())
 
         self.num_class = num_class
         self.num_point = num_point
@@ -640,7 +640,8 @@ class Model_lst_4part_ucla(nn.Module):
 
         A = self.graph.A # 3,25,25
         # A = np.stack([np.eye(num_point)] * 3, axis=0)
-        self.A_vector = self.get_A(graph, k).float()
+        # Register A_vector as a buffer so DataParallel can replicate it to each GPU
+        self.register_buffer('A_vector', self.get_A(graph, k).float())
 
 
         self.num_class = num_class
@@ -772,7 +773,7 @@ class Model_lst_4part_bone_ucla(nn.Module):
             self.graph = Graph(**graph_args)
 
         A = self.graph.A # 3,25,25
-        self.A_vector = self.get_A(graph, k).float()
+        self.register_buffer('A_vector', self.get_A(graph, k).float())
 
 
         self.num_class = num_class
