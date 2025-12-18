@@ -262,22 +262,59 @@ class Processor():
         self.best_acc = 0
         self.best_acc_epoch = 0
 
-        self.model = self.model.cuda(self.output_device)
+        self.model = self.model.cuda(self.output_device) # This is the model that will be used for training and evaluation
+        print("DBG: ______AFTER MODEL CUDA CALL_____")
+        # print("DBG: PROCESSOR __INIT__() self.model", self.model)
+        # Multi-GPU setup: Wrap the main skeleton action recognition model with DataParallel
+        # DataParallel splits the input batch across multiple GPUs, runs forward/backward on each,
+        # and gathers results on the output_device. This enables parallel training on multiple GPUs.
+
+        print("DBG: PROCESSOR __INIT__() self.arg.device", self.arg.device)
+        print("DBG: PROCESSOR __INIT__() type(self.arg.device)", type(self.arg.device))
+        print("DBG: PROCESSOR __INIT__() self.output_device", self.output_device)
+
 
         if type(self.arg.device) is list:
+            print("DBG: ______BEFORE DATA PARALLEL_____")
             if len(self.arg.device) > 1:
+                print("DBG: ______INSIDE DATA PARALLEL IF LOOP_____")
                 self.model = nn.DataParallel(
                     self.model,
-                    device_ids=self.arg.device,
-                    output_device=self.output_device)
+                    device_ids=self.arg.device,  # List of GPU IDs to use (e.g., [0, 1])
+                    output_device=self.output_device # GPU where outputs are gathered (typically device[0])
+                )  
 
+        # Multi-GPU setup: Wrap the CLIP text encoder models with DataParallel
+        # Each text encoder (one per CLIP head) also needs to be wrapped for multi-GPU training.
+        # This ensures text embeddings are computed in parallel across GPUs, matching the visual model.
         if type(self.arg.device) is list:
+            print("DBG: ______INSIDE TEXT ENCODER DATA PARALLEL IF LOOP_____")
             if len(self.arg.device) > 1:
+                # Validate that 'head' key exists in model_args to avoid KeyError
+                if 'head' not in self.arg.model_args:
+                    raise KeyError("'head' key not found in model_args. Please check your config file.")
+                
+                # Validate that head list is not empty
+                if not self.arg.model_args['head']:
+                    raise ValueError("model_args['head'] is empty. At least one CLIP head must be specified.")
+                
                 for name in self.arg.model_args['head']:
+                    print("DBG: ______BEFORE TEXT ENCODER DATA PARALLEL_____", name)
+                    
+                    # Validate that the text encoder model exists before wrapping
+                    if name not in self.model_text_dict:
+                        raise KeyError(f"Text encoder model '{name}' not found in model_text_dict. "
+                                     f"Available models: {list(self.model_text_dict.keys())}")
+                    
+                    # Ensure the model is on CUDA before wrapping with DataParallel
+                    if not next(self.model_text_dict[name].parameters()).is_cuda:
+                        self.model_text_dict[name] = self.model_text_dict[name].cuda(self.output_device)
+                    
                     self.model_text_dict[name] = nn.DataParallel(
                         self.model_text_dict[name],
-                        device_ids=self.arg.device,
-                        output_device=self.output_device)
+                        device_ids=self.arg.device,  # Same GPU IDs as main model
+                        output_device=self.output_device # Same output device for consistency
+                    )  
         
 
     def load_data(self):
