@@ -239,7 +239,9 @@ class unit_gcn(nn.Module):
         if self.adaptive:
             self.PA = nn.Parameter(torch.from_numpy(A.astype(np.float32)))
         else:
-            self.A = torch.from_numpy(A.astype(np.float32))
+            # Register A as a buffer so DataParallel replicates it to each GPU
+            # This is critical for eval mode where device checking is stricter
+            self.register_buffer('A', torch.from_numpy(A.astype(np.float32)))
         self.alpha = nn.Parameter(torch.zeros(1))
         self.bn = nn.BatchNorm2d(out_channels)
         self.soft = nn.Softmax(-2)
