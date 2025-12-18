@@ -733,7 +733,7 @@ class Model_lst_4part_ucla(nn.Module):
 
         # N*M,C,T,V
         c_new = x.size(1)
-        print("Model_lst_4part_ucla ---- forward ---- c_new: ", c_new.shape)
+        print("Model_lst_4part_ucla ---- forward ---- c_new: ", c_new)
         feature = x.view(N,M,c_new,T//4,V)
         device = x.device
         print("Model_lst_4part_ucla ---- forward ---- device: ", device)
