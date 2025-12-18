@@ -340,8 +340,15 @@ class Processor():
         print("=========== DEBUG =================")
         print("self.arg.device: ", self.arg.device)
         print("=========== DEBUG =================")
+        # output_device = self.arg.device[0] if type(self.arg.device) is list else self.arg.device
         output_device = self.arg.device[0] if type(self.arg.device) is list else self.arg.device
-        self.output_device = output_device
+        if torch.cuda.is_available():
+            self.output_device = output_device
+        else:
+            self.output_device = None  # Will use CPU
+            print("WARNING: CUDA not available, using CPU")
+
+        # self.output_device = output_device
         print("DBG: ______BEFORE MODEL IMPORT_____", self.arg.model)
         Model = import_class(self.arg.model)
         shutil.copy2(inspect.getfile(Model), self.arg.work_dir)
@@ -619,7 +626,19 @@ class Processor():
                     data = data.float().cuda(self.output_device)
                     label = label.long().cuda(self.output_device)
                     print("DBG: ______AFTER CUDA CALL_____")
-                    output, _, _, _ = self.model(data)
+                    try:
+                        print("DBG: ______AFTER CUDA CALL_____")
+                        print(f"DBG: data.shape={data.shape}, data.device={data.device}")
+                        print(f"DBG: model device check: {next(self.model.parameters()).device if hasattr(self.model, 'parameters') else 'N/A'}")
+                        output, _, _, _ = self.model(data)
+                        print("DBG: ______AFTER MODEL CALL_____")
+                    except RuntimeError as e:
+                        print(f"ERROR in model forward: {e}")
+                        print(f"Data shape: {data.shape}, device: {data.device}")
+                        if isinstance(self.model, nn.DataParallel):
+                            print(f"DataParallel device_ids: {self.model.device_ids}")
+                            print(f"DataParallel output_device: {self.model.output_device}")
+                        raise
                     print("DBG: ______AFTER MODEL CALL_____")
                     loss = self.loss_ce(output, label)
 
