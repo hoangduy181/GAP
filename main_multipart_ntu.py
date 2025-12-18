@@ -318,6 +318,7 @@ class Processor():
         self.model_text_dict = nn.ModuleDict()
 
         for name in self.arg.model_args['head']:
+            print("DBG: ______BEFORE CLIP LOAD_____", name)
             # Use output_device for DataParallel compatibility
             clip_device = torch.device(f'cuda:{self.output_device}' if torch.cuda.is_available() else 'cpu')
             model_, preprocess = clip.load(name, clip_device)

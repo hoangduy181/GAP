@@ -316,6 +316,7 @@ class Processor():
         self.model_text_dict = nn.ModuleDict()
 
         for name in self.arg.model_args['head']:
+            print("DBG: ______BEFORE CLIP LOAD_____", name)
             # Use output_device for DataParallel compatibility
             clip_device = torch.device(f'cuda:{self.output_device}' if torch.cuda.is_available() else 'cpu')
             model_, preprocess = clip.load(name, clip_device)
@@ -542,42 +543,56 @@ class Processor():
 
     def eval(self, epoch, save_score=False, loader_name=['test'], wrong_file=None, result_file=None):
         print("=========== DEBUG =================")
+
+        print("epoch: ", epoch)
         print("loader_name: ", loader_name)
+        print("save_score", save_score)
+        print("wrong_file: ", wrong_file)
+        print("result_file: ", result_file)
         print("=========== DEBUG =================")
-        print("=========== DEBUG =================")
+        # print("=========== DEBUG =================")
         if wrong_file is not None:
             f_w = open(wrong_file, 'w')
         if result_file is not None:
             f_r = open(result_file, 'w')
+
+        print("DBG: ______BEFORE EVAL_____")
         self.model.eval()
+        print("DBG: ______AFTER EVAL_____")
         self.print_log('Eval epoch: {}'.format(epoch + 1))
+        print("DBG: ______AFTER PRINT LOG_____")
         for ln in loader_name:
+            print("DBG: loader_name ln", ln)
             loss_value = []
             score_frag = []
             label_list = []
             pred_list = []
             step = 0
+            print("DBG: ______BEFORE TQDM_____")
             process = tqdm(self.data_loader[ln], ncols=40)
-
-
+            print("DBG: ______AFTER TQDM_____")
+            print("DBG: ______BEFORE FOR LOOP_____")
             for batch_idx, (data, label, index) in enumerate(process):
+                print("DBG: ______INSIDE FOR LOOP_____", batch_idx)
                 label_list.append(label)
+                print("DBG: self.output_device: ", self.output_device)
                 with torch.no_grad():
                     b, _, _, _, _ = data.size()
-                    print("self.output_device: ", self.output_device)
                     data = data.float().cuda(self.output_device)
                     label = label.long().cuda(self.output_device)
-                    
+                    print("DBG: ______AFTER CUDA CALL_____")
                     output, _, _, _ = self.model(data)
-
+                    print("DBG: ______AFTER MODEL CALL_____")
                     loss = self.loss_ce(output, label)
 
                     score_frag.append(output.data.cpu().numpy())
                     loss_value.append(loss.data.item())
 
                     _, predict_label = torch.max(output.data, 1)
+                    print("DBG: ______AFTER MAX CALL_____")
                     pred_list.append(predict_label.data.cpu().numpy())
                     step += 1
+                    print("DBG: ______AFTER STEP INCREMENT_____")
 
                 if wrong_file is not None or result_file is not None:
                     predict = list(predict_label.cpu().numpy())
