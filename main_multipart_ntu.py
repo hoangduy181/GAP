@@ -587,8 +587,17 @@ class Processor():
                     b, _, _, _, _ = data.size()
                     data = data.float().cuda(self.output_device)
                     label = label.long().cuda(self.output_device)
-                    
-                    output, _, _, _ = self.model(data)
+                    try:
+                        with torch.cuda.amp.autocast():
+                            output, _, _, _ = self.model(data)
+                    except RuntimeError as e:
+                        print(f"ERROR in model forward: {e}")
+                        print(f"Data shape: {data.shape}, device: {data.device}")
+                        if isinstance(self.model, nn.DataParallel):
+                            print(f"DataParallel device_ids: {self.model.device_ids}")
+                            print(f"DataParallel output_device: {self.model.output_device}")
+                        raise
+                    # output, _, _, _ = self.model(data)
                     loss = self.loss_ce(output, label)
 
                     score_frag.append(output.data.cpu().numpy())
