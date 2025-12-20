@@ -306,21 +306,33 @@ class Processor():
     def load_data(self):
         Feeder = import_class(self.arg.feeder)
         self.data_loader = dict()
+        
+        # Cap num_workers to prevent deadlocks in limited environments (Colab/Kaggle)
+        # PyTorch recommends max 2 workers for systems with limited CPU cores
+        import multiprocessing
+        max_workers = min(self.arg.num_worker, max(1, multiprocessing.cpu_count() // 2))
+        if self.arg.num_worker > max_workers:
+            self.print_log(f'WARNING: Reducing num_worker from {self.arg.num_worker} to {max_workers} to prevent DataLoader deadlock')
+        
         if self.arg.phase == 'train':
             self.data_loader['train'] = torch.utils.data.DataLoader(
                 dataset=Feeder(**self.arg.train_feeder_args),
                 batch_size=self.arg.batch_size,
                 shuffle=True,
-                num_workers=self.arg.num_worker,
+                num_workers=max_workers,
                 drop_last=True,
-                worker_init_fn=init_seed)
+                worker_init_fn=init_seed,
+                persistent_workers=False,  # Don't keep workers alive between epochs to prevent deadlocks
+                pin_memory=torch.cuda.is_available())  # Only pin memory if CUDA is available
         self.data_loader['test'] = torch.utils.data.DataLoader(
             dataset=Feeder(**self.arg.test_feeder_args),
             batch_size=self.arg.test_batch_size,
             shuffle=False,
-            num_workers=self.arg.num_worker,
+            num_workers=max_workers,
             drop_last=False,
-            worker_init_fn=init_seed)
+            worker_init_fn=init_seed,
+            persistent_workers=False,  # Don't keep workers alive to prevent deadlocks
+            pin_memory=torch.cuda.is_available())  # Only pin memory if CUDA is available
 
     def load_model(self):
         output_device = self.arg.device[0] if type(self.arg.device) is list else self.arg.device

@@ -50,3 +50,4 @@ batch_size: 64
 test_batch_size: 64
 num_epoch: 40
 nesterov: True
+num_worker: 2  # Reduced to prevent DataLoader deadlock (system recommends max 2)
