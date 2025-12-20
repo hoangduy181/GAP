@@ -392,7 +392,7 @@ class Processor():
                     print('  ' + d)
                 state.update(weights)
                 self.model.load_state_dict(state)
-
+            self.print_log('Weights loaded successfully from {}.'.format(self.arg.weights))  
             
 
     def load_optimizer(self):

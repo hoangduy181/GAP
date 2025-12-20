@@ -258,6 +258,9 @@ class Processor():
         else:
             self.load_optimizer()
             self.load_data()
+        
+
+        self.print_log(f'Processor initialized: {self.arg.work_dir}')
         self.lr = self.arg.base_lr
         self.best_acc = 0
         self.best_acc_epoch = 0
@@ -335,7 +338,7 @@ class Processor():
             num_workers=self.arg.num_worker,
             drop_last=False,
             worker_init_fn=init_seed)
-
+        self.print_log(f'DataLoader initialized')
     def load_model(self):
         print("=========== DEBUG =================")
         print("self.arg.device: ", self.arg.device)
