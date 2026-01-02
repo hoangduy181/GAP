@@ -172,8 +172,8 @@ class CTRGC(nn.Module):
             self.rel_channels = 8
             self.mid_channels = 16
         else:
-            self.rel_channels = in_channels // rel_reduction
-            self.mid_channels = in_channels // mid_reduction
+            self.rel_channels = max(1, in_channels // rel_reduction)  # Ensure at least 1 channel
+            self.mid_channels = max(1, in_channels // mid_reduction)  # Ensure at least 1 channel
         self.conv1 = nn.Conv2d(self.in_channels, self.rel_channels, kernel_size=1)
         self.conv2 = nn.Conv2d(self.in_channels, self.rel_channels, kernel_size=1)
         self.conv3 = nn.Conv2d(self.in_channels, self.out_channels, kernel_size=1)
