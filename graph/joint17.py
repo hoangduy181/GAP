@@ -3,6 +3,7 @@ import numpy as np
 
 sys.path.extend(['../'])
 from graph import tools
+from graph.infogcn import tools as tools_infogcn
 
 # 17-joint skeleton structure (COCO format)
 # Joint indices: 0-16
@@ -64,6 +65,7 @@ class Graph:
         self.outward = outward
         self.neighbor = neighbor
         self.A = self.get_adjacency_matrix(labeling_mode)
+        self.A_outward_binary = tools_infogcn.get_adjacency_matrix(self.outward, self.num_node)
 
     def get_adjacency_matrix(self, labeling_mode=None):
         if labeling_mode is None:

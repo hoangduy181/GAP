@@ -1,4 +1,4 @@
-work_dir: ./work_dir/ntu2d/xsub/ctrgcn_joint
+work_dir: ./work_dir/ntu2d/xsub/ctrgcn_multipart
 
 # feeder
 feeder: feeders.feeder_ntu_2d.Feeder
@@ -27,16 +27,20 @@ test_feeder_args:
   bone: False
   debug: False
 
-# model
-model: model.ctrgcn.Model
+# model - using multipart model for 17-joint NTU2D
+model: model.ctrgcn.Model_lst_4part_ntu2d
 model_args:
   num_class: 60
   num_point: 17
-  num_person: 2
+  num_person: 1
   in_channels: 2  # 2D coordinates (X, Y)
   graph: graph.joint17.Graph
   graph_args:
     labeling_mode: 'spatial'
+  head: ['ViT-B/32']  # CLIP head for text encoding
+  adaptive: True
+  drop_out: 0.5
+  k: 1  # For A_vector computation
 
 #optim
 weight_decay: 0.0004
@@ -44,6 +48,7 @@ base_lr: 0.1
 lr_decay_rate: 0.1
 step: [35, 55]
 warm_up_epoch: 5
+te_lr_ratio: 1.0  # Text encoder learning rate ratio
 
 # training
 device: [0]
@@ -51,3 +56,5 @@ batch_size: 6
 test_batch_size: 64
 num_epoch: 65
 nesterov: True
+loss_alpha: 0.8  # Weight for contrastive loss
+
