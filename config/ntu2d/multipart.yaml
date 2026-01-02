@@ -46,7 +46,7 @@ model_args:
 weight_decay: 0.0004
 base_lr: 0.1
 lr_decay_rate: 0.1
-step: [35, 55]
+step: [55, 75]
 warm_up_epoch: 5
 te_lr_ratio: 1.0  # Text encoder learning rate ratio
 
@@ -54,7 +54,7 @@ te_lr_ratio: 1.0  # Text encoder learning rate ratio
 device: [0]
 batch_size: 6
 test_batch_size: 64
-num_epoch: 65
+num_epoch: 110
 nesterov: True
 loss_alpha: 0.8  # Weight for contrastive loss
 
