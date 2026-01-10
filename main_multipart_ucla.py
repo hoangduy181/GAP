@@ -256,6 +256,9 @@ class Processor():
         if self.arg.phase == 'model_size':
             pass
         else:
+            # Check and preprocess val videos if needed (for training)
+            if self.arg.phase == 'train':
+                self.check_and_preprocess_val()
             self.load_optimizer()
             self.load_data()
         
@@ -320,6 +323,84 @@ class Processor():
                     )  
         
 
+    def check_and_preprocess_val(self):
+        """Check if val JSON files exist, and preprocess if needed."""
+        # Check if preprocessing config exists (it's loaded from yaml config)
+        # Access it via vars(self.arg) or check if it was set
+        prep_config = getattr(self.arg, 'preprocessing', None)
+        if not prep_config:
+            # Try to get from config file if available
+            if hasattr(self.arg, 'config') and self.arg.config and os.path.exists(self.arg.config):
+                try:
+                    with open(self.arg.config, 'r') as f:
+                        config_data = yaml.safe_load(f)
+                    prep_config = config_data.get('preprocessing', {})
+                except Exception as e:
+                    self.print_log(f'Could not load preprocessing config: {e}')
+                    return
+            else:
+                return
+        
+        if not prep_config.get('auto_preprocess_val', True):
+            return
+        
+        # Get val data path from test_feeder_args
+        val_data_path = self.arg.test_feeder_args.get('data_path', '')
+        
+        # Check if val JSON files exist
+        if os.path.isdir(val_data_path):
+            json_files = glob.glob(os.path.join(val_data_path, '*.json'))
+            if json_files:
+                self.print_log(f'Val JSON files found: {len(json_files)} files in {val_data_path}')
+                return
+        
+        # Val files don't exist, need to preprocess
+        self.print_log('Val JSON files not found. Starting automatic preprocessing...')
+        
+        try:
+            # Import preprocessing function
+            from main_multipart_yolo_ucla import process_videos
+            
+            # Get preprocessing parameters
+            video_dir = prep_config.get('video_dir')
+            output_dir_base = prep_config.get('output_dir', 'data/ucla_yolo')
+            val_output_dir = os.path.join(output_dir_base, 'val')
+            val_split_file = prep_config.get('val_split_file')
+            split_file_dir = prep_config.get('split_file_dir', 'data/ucla_splits')
+            
+            # Fallback: construct split file path if not provided
+            if not val_split_file:
+                val_split_file = os.path.join(split_file_dir, 'val_split.json')
+            
+            if not video_dir:
+                self.print_log('WARNING: video_dir not found in preprocessing config. Skipping auto-preprocessing.')
+                return
+            
+            if not os.path.exists(val_split_file):
+                self.print_log(f'WARNING: Val split file not found: {val_split_file}. Skipping auto-preprocessing.')
+                self.print_log('Please run: python create_ucla_split.py first')
+                return
+            
+            # Run preprocessing
+            self.print_log(f'Preprocessing val videos from {video_dir} to {val_output_dir}')
+            process_videos(
+                video_dir=video_dir,
+                output_dir=val_output_dir,
+                split='val',
+                yolo_model_path=prep_config.get('yolo_model_path', 'yolo11n-pose.pt'),
+                yolo_conf_threshold=prep_config.get('yolo_conf_threshold', 0.25),
+                yolo_device=prep_config.get('yolo_device'),
+                yolo_tracking_strategy=prep_config.get('yolo_tracking_strategy', 'largest_bbox'),
+                overwrite=prep_config.get('overwrite', False),
+                split_file=val_split_file
+            )
+            self.print_log('Val preprocessing completed!')
+            
+        except Exception as e:
+            self.print_log(f'ERROR during automatic val preprocessing: {e}')
+            self.print_log('Please manually run: python main_multipart_yolo_ucla.py --config config/ucla/yolo_pose.yaml --split val')
+            raise
+    
     def load_data(self):
         Feeder = import_class(self.arg.feeder)
         self.data_loader = dict()

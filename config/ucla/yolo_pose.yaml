@@ -1,0 +1,86 @@
+work_dir: ./work_dir/ucla/yolo_pose/ctrgcn_joint
+
+# preprocessing (for main_multipart_yolo_ucla.py)
+# Training will automatically preprocess val videos if they don't exist
+preprocessing:
+  video_dir: data/multiview_action_videos  # Root directory containing action class folders (a01, a02, etc.)
+  output_dir: data/ucla_yolo  # Base directory for preprocessed JSON files
+  split_file_dir: data/ucla_splits  # Directory containing train_split.json and val_split.json
+  train_split_file: data/ucla_splits/train_split.json  # Path to train split file
+  val_split_file: data/ucla_splits/val_split.json  # Path to val split file
+  overwrite: False  # Whether to overwrite existing preprocessed files
+  auto_preprocess_val: True  # Automatically preprocess val videos during training if missing
+  # YOLO preprocessing parameters
+  yolo_model_path: yolo11n-pose.pt
+  yolo_conf_threshold: 0.25
+  yolo_device: null  # null for auto, 'cuda' or 'cpu'
+  yolo_tracking_strategy: largest_bbox
+
+# feeder
+feeder: feeders.feeder_yolo_pose_ucla.Feeder
+train_feeder_args:
+  # Preprocess videos first using: python main_multipart_yolo_ucla.py --config config/ucla/yolo_pose.yaml --split train
+  data_path: data/ucla_yolo/train  # Directory containing preprocessed JSON files (or video files as fallback)
+  label_path: train  # 'train' or 'val' to determine split
+  split: train
+  debug: False
+  random_choose: True
+  random_shift: False
+  random_move: False
+  window_size: 52  # UCLA default window size
+  normalization: False
+  random_rot: False  # Not recommended for 2D data
+  p_interval: [0.5, 1]
+  vel: False
+  bone: False
+  repeat: 5  # UCLA default repeat for data augmentation
+  # YOLO-specific parameters
+  yolo_model_path: yolo11n-pose.pt  # YOLO model path or name
+  yolo_conf_threshold: 0.25  # Confidence threshold for pose detection
+  yolo_device: null  # null for auto, 'cuda' or 'cpu' for manual
+  yolo_tracking_strategy: largest_bbox  # 'largest_bbox', 'highest_conf', or 'track_id'
+  cache_dir: data/yolo_cache/ucla/train  # Directory to cache YOLO detections
+  use_cache: True  # Whether to use cached detections
+
+test_feeder_args:
+  # Preprocess videos first using: python main_multipart_yolo_ucla.py --config config/ucla/yolo_pose.yaml --split val
+  data_path: data/ucla_yolo/val  # Directory containing preprocessed JSON files (or video files as fallback)
+  label_path: val  # 'train' or 'val' to determine split
+  split: test
+  window_size: 52
+  p_interval: [0.95]
+  vel: False
+  bone: False
+  debug: False
+  repeat: 1
+  # YOLO-specific parameters
+  yolo_model_path: yolo11n-pose.pt
+  yolo_conf_threshold: 0.25
+  yolo_device: null
+  yolo_tracking_strategy: largest_bbox
+  cache_dir: data/yolo_cache/ucla/val
+  use_cache: True
+
+# model
+model: model.baseline.Model
+model_args:
+  num_class: 10  # UCLA has 10 action classes
+  num_point: 17  # YOLO outputs 17 COCO joints (UCLA uses 20, but we'll use 17)
+  num_person: 1
+  graph: graph.joint17.Graph  # Use joint17 graph for 17-joint COCO format
+  graph_args:
+    labeling_mode: 'spatial'
+
+#optim
+weight_decay: 0.0001
+base_lr: 0.1
+lr_decay_rate: 0.1
+step: [50]
+warm_up_epoch: 5
+
+# training
+device: [0]
+batch_size: 16
+test_batch_size: 64
+num_epoch: 65
+nesterov: True

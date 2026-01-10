@@ -1,0 +1,69 @@
+work_dir: ./work_dir/ntu2d/yolo_pose/ctrgcn_joint
+
+# feeder
+feeder: feeders.feeder_yolo_pose.Feeder
+train_feeder_args:
+  data_path: data/videos/train  # Directory containing training video files
+  label_path: null  # Optional: path to label file (video_name: label format)
+  split: train
+  split_type: xsub
+  debug: False
+  random_choose: False
+  random_shift: False
+  random_move: False
+  window_size: 64
+  normalization: False
+  random_rot: False  # Not recommended for 2D data
+  p_interval: [0.5, 1]
+  vel: False
+  bone: False
+  # YOLO-specific parameters
+  yolo_model_path: yolo11n-pose.pt  # YOLO model path or name
+  yolo_conf_threshold: 0.25  # Confidence threshold for pose detection
+  yolo_device: null  # null for auto, 'cuda' or 'cpu' for manual
+  yolo_tracking_strategy: largest_bbox  # 'largest_bbox', 'highest_conf', or 'track_id'
+  cache_dir: data/yolo_cache/train  # Directory to cache YOLO detections
+  use_cache: True  # Whether to use cached detections
+
+test_feeder_args:
+  data_path: data/videos/test  # Directory containing test video files
+  label_path: null  # Optional: path to label file
+  split: test
+  split_type: xsub
+  window_size: 64
+  p_interval: [0.95]
+  vel: False
+  bone: False
+  debug: False
+  # YOLO-specific parameters
+  yolo_model_path: yolo11n-pose.pt
+  yolo_conf_threshold: 0.25
+  yolo_device: null
+  yolo_tracking_strategy: largest_bbox
+  cache_dir: data/yolo_cache/test
+  use_cache: True
+
+# model
+model: model.ctrgcn.Model
+model_args:
+  num_class: 60  # Adjust based on your dataset
+  num_point: 17
+  num_person: 2
+  in_channels: 2  # 2D coordinates (X, Y)
+  graph: graph.joint17.Graph
+  graph_args:
+    labeling_mode: 'spatial'
+
+#optim
+weight_decay: 0.0004
+base_lr: 0.1
+lr_decay_rate: 0.1
+step: [35, 55]
+warm_up_epoch: 5
+
+# training
+device: [0]
+batch_size: 6
+test_batch_size: 64
+num_epoch: 65
+nesterov: True
