@@ -1,0 +1,91 @@
+# Data configuration - references data.json file
+data_config:
+  data_json: data/yolo_ucla/data.json  # Path to data.json file containing paths to JSON files
+
+# Processing configuration (for --mode process)
+processing:
+  video_dir: data/multiview_action_videos  # Root directory containing action class folders (a01, a02, etc.)
+  output_dir: data/yolo_ucla_json  # Output directory for preprocessed JSON files
+  yolo_model_path: yolo11n-pose.pt
+  yolo_conf_threshold: 0.25
+  yolo_device: null  # null for auto, 'cuda' or 'cpu'
+  yolo_tracking_strategy: largest_bbox
+  overwrite: False  # Whether to overwrite existing preprocessed files
+
+# Training configuration (for --mode train)
+training:
+  work_dir: ./work_dir/yolo_ucla/ctrgcn_joint
+  
+  # Feeder configuration
+  feeder: feeders.feeder_yolo_pose_ucla.Feeder
+  
+  train_feeder_args:
+    data_path: data/yolo_ucla_json  # Base directory (feeder will use data.json to find files)
+    label_path: train  # 'train' or 'val' to determine split
+    split: train
+    debug: False
+    random_choose: True
+    random_shift: False
+    random_move: False
+    window_size: 52  # UCLA default window size
+    normalization: False
+    random_rot: False  # Not recommended for 2D data
+    p_interval: [0.5, 1]
+    vel: False
+    bone: False
+    repeat: 5  # UCLA default repeat for data augmentation
+    # YOLO-specific parameters (if processing videos on-the-fly)
+    yolo_model_path: yolo11n-pose.pt
+    yolo_conf_threshold: 0.25
+    yolo_device: null
+    yolo_tracking_strategy: largest_bbox
+    cache_dir: data/yolo_cache/ucla/train
+    use_cache: True
+  
+  test_feeder_args:
+    data_path: data/yolo_ucla_json  # Base directory (feeder will use data.json to find files)
+    label_path: val  # 'train' or 'val' to determine split
+    split: test
+    window_size: 52
+    p_interval: [0.95]
+    vel: False
+    bone: False
+    debug: False
+    repeat: 1
+    # YOLO-specific parameters (if processing videos on-the-fly)
+    yolo_model_path: yolo11n-pose.pt
+    yolo_conf_threshold: 0.25
+    yolo_device: null
+    yolo_tracking_strategy: largest_bbox
+    cache_dir: data/yolo_cache/ucla/val
+    use_cache: True
+  
+  # Model configuration
+  model: model.baseline.Model
+  model_args:
+    num_class: 10  # UCLA has 10 action classes
+    num_point: 17  # YOLO outputs 17 COCO joints
+    num_person: 1
+    graph: graph.joint17.Graph
+    graph_args:
+      labeling_mode: 'spatial'
+    head: ['ViT-B/32']  # CLIP head for text encoding
+  
+  # Optimizer configuration
+  weight_decay: 0.0001
+  base_lr: 0.1
+  lr_decay_rate: 0.1
+  step: [50]
+  warm_up_epoch: 5
+  
+  # Training parameters
+  device: [0]
+  batch_size: 16
+  test_batch_size: 64
+  num_epoch: 65
+  nesterov: True
+  num_worker: 4
+  save_interval: 10
+  eval_interval: 5
+  log_interval: 100
+  phase: train

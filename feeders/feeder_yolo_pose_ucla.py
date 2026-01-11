@@ -128,10 +128,36 @@ class Feeder(Dataset):
     
     def load_data(self):
         """Load data from preprocessed JSON files or video files."""
-        # Check if data_path points to JSON files (preprocessed data)
+        # First, try to load from data.json if it exists
+        data_json_path = None
+        
+        # Check if data_path is a data.json file
+        if os.path.isfile(self.data_path) and self.data_path.endswith('data.json'):
+            data_json_path = self.data_path
+        # Check if data_path is a directory, look for data.json in it or parent
+        elif os.path.isdir(self.data_path):
+            # Check in data_path directory
+            potential_data_json = os.path.join(self.data_path, 'data.json')
+            if os.path.exists(potential_data_json):
+                data_json_path = potential_data_json
+            else:
+                # Check in parent directory
+                parent_data_json = os.path.join(os.path.dirname(self.data_path), 'data.json')
+                if os.path.exists(parent_data_json):
+                    data_json_path = parent_data_json
+        
+        # If data.json found, use it
+        if data_json_path and os.path.exists(data_json_path):
+            print(f"Loading from data.json: {data_json_path}")
+            self._load_from_data_json(data_json_path)
+            return
+        
+        # Fallback to old method: check if data_path points to JSON files (preprocessed data)
         if os.path.isdir(self.data_path):
             # Check if it contains JSON files (preprocessed) or video files
             json_files = glob.glob(os.path.join(self.data_path, '*.json'))
+            # Filter out data.json files
+            json_files = [f for f in json_files if not f.endswith('data.json') and not f.endswith('_data_dict.json')]
             video_extensions = ['*.mp4', '*.avi', '*.mov', '*.mkv', '*.flv', '*.wmv']
             video_files = []
             for ext in video_extensions:
@@ -148,7 +174,78 @@ class Feeder(Dataset):
             else:
                 raise ValueError(f"No JSON or video files found in {self.data_path}")
         else:
-            raise ValueError(f"data_path must be a directory, got: {self.data_path}")
+            raise ValueError(f"data_path must be a directory or data.json file, got: {self.data_path}")
+    
+    def _load_from_data_json(self, data_json_path: str):
+        """Load data from data.json file structure."""
+        with open(data_json_path, 'r') as f:
+            data_json = json.load(f)
+        
+        # Get the appropriate split
+        split_data = data_json.get(self.train_val, [])
+        if not split_data:
+            raise ValueError(f"No {self.train_val} data found in data.json")
+        
+        self.data_list = []
+        self.label_list = []
+        self.sample_name = []
+        self.indices = []
+        
+        for idx, item in enumerate(split_data):
+            json_path = item.get('json_path', '')
+            full_file_name = item.get('full_file_name', '')
+            file_name = item.get('file_name', full_file_name)
+            label = item.get('label', 0)
+            
+            # Ensure label is 0-indexed
+            if isinstance(label, int) and label > 0:
+                label = label - 1
+            
+            # Check if JSON file exists
+            if not os.path.exists(json_path):
+                print(f"Warning: JSON file not found: {json_path}, skipping")
+                continue
+            
+            try:
+                with open(json_path, 'r') as f:
+                    data = json.load(f)
+                
+                # Extract skeletons: list of frames, each frame is list of 17 joints [x, y, conf]
+                skeletons = data.get('skeletons', [])
+                if not skeletons:
+                    print(f"Warning: No skeletons found in {json_path}")
+                    continue
+                
+                # Convert to numpy array: (T, 17, 3)
+                keypoints_list = [np.array(frame) for frame in skeletons]
+                
+                # Convert to CTR-GCN format
+                keypoints_array = self._yolo_to_ctrgcn_format(keypoints_list)
+                
+                self.data_list.append(keypoints_array)
+                self.label_list.append(label)
+                self.sample_name.append(full_file_name or file_name)
+                self.indices.append(idx)
+                
+            except Exception as e:
+                print(f"Error loading {json_path}: {e}")
+                continue
+        
+        if self.debug:
+            # Debug mode: use only 1/5 of samples
+            original_count = len(self.data_list)
+            if original_count > 5:
+                # Take every 5th sample (approximately 1/5)
+                self.data_list = self.data_list[::5]
+                self.label_list = self.label_list[::5]
+                self.sample_name = self.sample_name[::5]
+                self.indices = self.indices[::5]
+                print(f"DEBUG MODE: Reduced dataset from {original_count} to {len(self.data_list)} samples (1/5)")
+            else:
+                # If already small, just use all
+                print(f"DEBUG MODE: Using all {len(self.data_list)} samples (dataset already small)")
+        
+        print(f"Loaded {len(self.data_list)} samples from data.json for {self.train_val} split")
     
     def _load_from_json_files(self, json_files):
         """Load data from preprocessed JSON files."""
@@ -195,11 +292,18 @@ class Feeder(Dataset):
                 continue
         
         if self.debug:
-            # Use only first 100 samples for debugging
-            self.data_list = self.data_list[:100]
-            self.label_list = self.label_list[:100]
-            self.sample_name = self.sample_name[:100]
-            self.indices = self.indices[:100]
+            # Debug mode: use only 1/5 of samples
+            original_count = len(self.data_list)
+            if original_count > 5:
+                # Take every 5th sample (approximately 1/5)
+                self.data_list = self.data_list[::5]
+                self.label_list = self.label_list[::5]
+                self.sample_name = self.sample_name[::5]
+                self.indices = self.indices[::5]
+                print(f"DEBUG MODE: Reduced dataset from {original_count} to {len(self.data_list)} samples (1/5)")
+            else:
+                # If already small, just use all
+                print(f"DEBUG MODE: Using all {len(self.data_list)} samples (dataset already small)")
         
         print(f"Loaded {len(self.data_list)} samples from JSON files for {self.train_val} split")
     
@@ -257,11 +361,18 @@ class Feeder(Dataset):
             self.indices.append(idx)
         
         if self.debug:
-            # Use only first 100 samples for debugging
-            self.data_list = self.data_list[:100]
-            self.label_list = self.label_list[:100]
-            self.sample_name = self.sample_name[:100]
-            self.indices = self.indices[:100]
+            # Debug mode: use only 1/5 of samples
+            original_count = len(self.data_list)
+            if original_count > 5:
+                # Take every 5th sample (approximately 1/5)
+                self.data_list = self.data_list[::5]
+                self.label_list = self.label_list[::5]
+                self.sample_name = self.sample_name[::5]
+                self.indices = self.indices[::5]
+                print(f"DEBUG MODE: Reduced dataset from {original_count} to {len(self.data_list)} samples (1/5)")
+            else:
+                # If already small, just use all
+                print(f"DEBUG MODE: Using all {len(self.data_list)} samples (dataset already small)")
         
         print(f"Loaded {len(self.data_list)} samples from video files for {self.train_val} split")
     
