@@ -738,18 +738,85 @@ class Model_lst_4part_ucla(nn.Module):
 
         # N*M,C,T,V
         c_new = x.size(1)
-        # print("Model_lst_4part_ucla ---- forward ---- c_new: ", c_new)
-        feature = x.view(N,M,c_new,T//4,V)
+        T_actual = x.size(2)
         device = x.device
-        # print("Model_lst_4part_ucla ---- forward ---- device: ", device)
-        head_list = torch.tensor([2,3], dtype=torch.long, device=device)
-        hand_list = torch.tensor([10,11,6,7,8,9,4,5], dtype=torch.long, device=device)
-        foot_list = torch.tensor([16,17,18,19,12,13,14,15], dtype=torch.long, device=device)
-        hip_list = torch.tensor([0,1,12,16], dtype=torch.long, device=device)
-        head_feature = self.part_list[0](feature[:,:,:,:,head_list].mean(4).mean(3).mean(1))
-        hand_feature = self.part_list[1](feature[:,:,:,:,hand_list].mean(4).mean(3).mean(1))
-        foot_feature = self.part_list[2](feature[:,:,:,:,foot_list].mean(4).mean(3).mean(1))
-        hip_feature = self.part_list[3](feature[:,:,:,:,hip_list].mean(4).mean(3).mean(1))
+        
+        # Ensure T is divisible by 4 for part feature extraction, pad if necessary
+        T_padded = ((T_actual + 3) // 4) * 4  # Round up to nearest multiple of 4
+        if T_padded != T_actual:
+            # Pad the temporal dimension by repeating the last frame
+            padding = T_padded - T_actual
+            x = torch.cat([x, x[:, :, -padding:, :]], dim=2)
+        
+        # Reshape for part feature extraction
+        # x has shape (N*M, c_new, T_padded, V) at this point
+        # First reshape to (N, M, c_new, T_padded, V)
+        # Note: N and M are still in scope from line 720
+        x_reshaped = x.view(N, M, c_new, T_padded, V)
+        # Then reshape temporal dimension: (N, M, c_new, T_padded, V) -> (N, M, c_new, T_padded//4, 4, V)
+        # Then take mean over the 4 frames to get (N, M, c_new, T_padded//4, V)
+        feature = x_reshaped.view(N, M, c_new, T_padded//4, 4, V).mean(4)  # Mean over the 4-frame groups
+        # feature now has shape (N, M, c_new, T_padded//4, V)
+        
+        # Verify feature tensor has expected shape and V matches
+        assert feature.size(-1) == V, f"Feature tensor last dimension {feature.size(-1)} doesn't match V={V}"
+        
+        # Adapt joint indices based on actual number of joints V
+        # Always filter indices to ensure they're within valid range [0, V-1]
+        if V == 17:
+            # COCO 17-joint format: 0=Nose, 1-2=Eyes, 3-4=Ears, 5-6=Shoulders, 7-8=Elbows, 9-10=Wrists, 11-12=Hips, 13-14=Knees, 15-16=Ankles
+            head_list_raw = [0, 1, 2, 3, 4]  # Nose, Eyes, Ears
+            hand_list_raw = [5, 6, 7, 8, 9, 10]  # Shoulders, Elbows, Wrists
+            foot_list_raw = [13, 14, 15, 16]  # Knees, Ankles
+            hip_list_raw = [11, 12]  # Hips
+        elif V == 20:
+            # Original UCLA 20-joint format
+            head_list_raw = [2, 3]
+            hand_list_raw = [10, 11, 6, 7, 8, 9, 4, 5]
+            foot_list_raw = [16, 17, 18, 19, 12, 13, 14, 15]
+            hip_list_raw = [0, 1, 12, 16]
+        else:
+            # Fallback: use a subset of available joints
+            head_list_raw = list(range(min(5, V)))  # First 5 joints or all if V < 5
+            hand_list_raw = list(range(min(5, V), min(11, V)))  # Next 6 joints
+            foot_list_raw = list(range(max(0, V-4), V))  # Last 4 joints
+            hip_list_raw = list(range(max(0, V-6), min(13, V)))  # Last few joints
+        
+        # Filter all indices to ensure they're within valid range [0, V-1]
+        # This is critical to prevent index out of bounds errors
+        head_list = torch.tensor([i for i in head_list_raw if 0 <= i < V], dtype=torch.long, device=device)
+        hand_list = torch.tensor([i for i in hand_list_raw if 0 <= i < V], dtype=torch.long, device=device)
+        foot_list = torch.tensor([i for i in foot_list_raw if 0 <= i < V], dtype=torch.long, device=device)
+        hip_list = torch.tensor([i for i in hip_list_raw if 0 <= i < V], dtype=torch.long, device=device)
+        
+        # Double-check that all indices are valid (defensive programming)
+        assert head_list.numel() == 0 or head_list.max() < V, f"head_list has invalid indices: max={head_list.max()}, V={V}"
+        assert hand_list.numel() == 0 or hand_list.max() < V, f"hand_list has invalid indices: max={hand_list.max()}, V={V}"
+        assert foot_list.numel() == 0 or foot_list.max() < V, f"foot_list has invalid indices: max={foot_list.max()}, V={V}"
+        assert hip_list.numel() == 0 or hip_list.max() < V, f"hip_list has invalid indices: max={hip_list.max()}, V={V}"
+        
+        # Extract part features - feature shape is (N, M, c_new, T_padded//4, V)
+        # Indexing with [:, :, :, :, joint_list] selects joints along the last dimension
+        # Use fallback to mean over all joints if list is empty
+        if len(head_list) > 0:
+            head_feature = self.part_list[0](feature[:, :, :, :, head_list].mean(4).mean(3).mean(1))
+        else:
+            head_feature = self.part_list[0](feature.mean(4).mean(3).mean(1))
+        
+        if len(hand_list) > 0:
+            hand_feature = self.part_list[1](feature[:, :, :, :, hand_list].mean(4).mean(3).mean(1))
+        else:
+            hand_feature = self.part_list[1](feature.mean(4).mean(3).mean(1))
+        
+        if len(foot_list) > 0:
+            foot_feature = self.part_list[2](feature[:, :, :, :, foot_list].mean(4).mean(3).mean(1))
+        else:
+            foot_feature = self.part_list[2](feature.mean(4).mean(3).mean(1))
+        
+        if len(hip_list) > 0:
+            hip_feature = self.part_list[3](feature[:, :, :, :, hip_list].mean(4).mean(3).mean(1))
+        else:
+            hip_feature = self.part_list[3](feature.mean(4).mean(3).mean(1))
 
 
         x = x.view(N, M, c_new, -1)

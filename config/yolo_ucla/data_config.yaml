@@ -61,15 +61,17 @@ training:
     use_cache: True
   
   # Model configuration
-  model: model.baseline.Model
+  model: model.ctrgcn.Model_lst_4part_ucla
   model_args:
     num_class: 10  # UCLA has 10 action classes
     num_point: 17  # YOLO outputs 17 COCO joints
     num_person: 1
+    in_channels: 2  # YOLO provides (x, y) coordinates only (2 channels)
     graph: graph.joint17.Graph
     graph_args:
       labeling_mode: 'spatial'
     head: ['ViT-B/32']  # CLIP head for text encoding
+    k: 1  # Parameter for A_vector computation
   
   # Optimizer configuration
   weight_decay: 0.0001

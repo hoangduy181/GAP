@@ -157,7 +157,7 @@ class Model(nn.Module):
         self.num_point = num_point
         self.data_bn = nn.BatchNorm1d(num_person * in_channels * num_point)
 
-        self.l1 = TCN_GCN_unit(3, 64, A, residual=False, adaptive=adaptive)
+        self.l1 = TCN_GCN_unit(in_channels, 64, A, residual=False, adaptive=adaptive)
         self.l2 = TCN_GCN_unit(64, 64, A, adaptive=adaptive)
         self.l3 = TCN_GCN_unit(64, 64, A, adaptive=adaptive)
         self.l4 = TCN_GCN_unit(64, 64, A, adaptive=adaptive)
