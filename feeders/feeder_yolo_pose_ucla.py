@@ -43,7 +43,8 @@ class Feeder(Dataset):
                  yolo_device: Optional[str] = None,
                  yolo_tracking_strategy: str = 'largest_bbox',
                  cache_dir: Optional[str] = None,
-                 use_cache: bool = True):
+                 use_cache: bool = True,
+                 data_json_path: Optional[str] = None):
         """
         Initialize YOLO Pose Feeder for UCLA dataset.
         
@@ -64,8 +65,10 @@ class Feeder(Dataset):
             yolo_tracking_strategy: Strategy for person selection
             cache_dir: Directory to cache YOLO detections
             use_cache: Whether to use cached detections if available
+            data_json_path: Optional explicit path to data.json file
         """
         self.debug = debug
+        self.data_json_path = data_json_path
         self.data_path = data_path
         self.label_path = label_path
         self.split = split
@@ -131,10 +134,13 @@ class Feeder(Dataset):
         # First, try to load from data.json if it exists
         data_json_path = None
         
-        # Check if data_path is a data.json file
-        if os.path.isfile(self.data_path) and self.data_path.endswith('data.json'):
+        # Priority 1: Use explicitly provided data_json_path
+        if self.data_json_path and os.path.exists(self.data_json_path):
+            data_json_path = self.data_json_path
+        # Priority 2: Check if data_path is a data.json file
+        elif os.path.isfile(self.data_path) and self.data_path.endswith('data.json'):
             data_json_path = self.data_path
-        # Check if data_path is a directory, look for data.json in it or parent
+        # Priority 3: Check if data_path is a directory, look for data.json in it or parent
         elif os.path.isdir(self.data_path):
             # Check in data_path directory
             potential_data_json = os.path.join(self.data_path, 'data.json')
@@ -142,9 +148,19 @@ class Feeder(Dataset):
                 data_json_path = potential_data_json
             else:
                 # Check in parent directory
-                parent_data_json = os.path.join(os.path.dirname(self.data_path), 'data.json')
+                parent_dir = os.path.dirname(self.data_path)
+                parent_data_json = os.path.join(parent_dir, 'data.json')
                 if os.path.exists(parent_data_json):
                     data_json_path = parent_data_json
+                else:
+                    # Check in sibling directories (common pattern: data/yolo_ucla/data.json when data_path is data/yolo_ucla_json)
+                    # Try common sibling directory names
+                    sibling_dirs = ['yolo_ucla', 'ucla_yolo', 'data']
+                    for sibling_dir in sibling_dirs:
+                        sibling_data_json = os.path.join(parent_dir, sibling_dir, 'data.json')
+                        if os.path.exists(sibling_data_json):
+                            data_json_path = sibling_data_json
+                            break
         
         # If data.json found, use it
         if data_json_path and os.path.exists(data_json_path):

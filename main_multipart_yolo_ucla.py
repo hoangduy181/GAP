@@ -1102,6 +1102,12 @@ def run_training(config_path: str, debug: bool = False):
     with open(config_path, 'r') as f:
         config_data = yaml.safe_load(f)
     
+    # Get data.json path from data_config if available
+    data_json_path = None
+    if 'data_config' in config_data and 'data_json' in config_data['data_config']:
+        data_json_path = config_data['data_config']['data_json']
+        print(f"Found data.json path in config: {data_json_path}")
+    
     # Get training config
     training_config = config_data.get('training', {})
     
@@ -1186,6 +1192,14 @@ def run_training(config_path: str, debug: bool = False):
                 arg.test_feeder_args = default_arg['test_feeder_args']
             else:
                 arg.test_feeder_args.update(default_arg['test_feeder_args'])
+        
+        # Pass data.json path to feeder args if available
+        if data_json_path and os.path.exists(data_json_path):
+            if hasattr(arg, 'train_feeder_args') and isinstance(arg.train_feeder_args, dict):
+                arg.train_feeder_args['data_json_path'] = data_json_path
+            if hasattr(arg, 'test_feeder_args') and isinstance(arg.test_feeder_args, dict):
+                arg.test_feeder_args['data_json_path'] = data_json_path
+            print(f"Passing data.json path to feeders: {data_json_path}")
         
         # Verify critical fields are set
         if not arg.model:
