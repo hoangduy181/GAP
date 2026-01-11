@@ -664,20 +664,23 @@ class Processor():
             if 'debug' not in arg.train_feeder_args:
                 arg.train_feeder_args['debug'] = False
             if not arg.train_feeder_args['debug']:
-                arg.model_saved_name = os.path.join(arg.work_dir, 'runs')
-                if os.path.isdir(arg.model_saved_name):
-                    print('log_dir: ', arg.model_saved_name, 'already exist')
+                # Use work_dir for tensorboard logs (create runs subdirectory for tensorboard only)
+                # Models are saved directly in work_dir with pattern: runs-{epoch}-{step}.pt
+                tensorboard_dir = os.path.join(arg.work_dir, 'runs')
+                if os.path.isdir(tensorboard_dir):
+                    print('log_dir: ', tensorboard_dir, 'already exist')
                     answer = input('delete it? y/n:')
                     if answer == 'y':
-                        shutil.rmtree(arg.model_saved_name)
-                        print('Dir removed: ', arg.model_saved_name)
+                        shutil.rmtree(tensorboard_dir)
+                        print('Dir removed: ', tensorboard_dir)
                         input('Refresh the website of tensorboard by pressing any keys')
                     else:
-                        print('Dir not removed: ', arg.model_saved_name)
-                self.train_writer = SummaryWriter(os.path.join(arg.model_saved_name, 'train'), 'train')
-                self.val_writer = SummaryWriter(os.path.join(arg.model_saved_name, 'val'), 'val')
+                        print('Dir not removed: ', tensorboard_dir)
+                self.train_writer = SummaryWriter(os.path.join(tensorboard_dir, 'train'), 'train')
+                self.val_writer = SummaryWriter(os.path.join(tensorboard_dir, 'val'), 'val')
             else:
-                self.train_writer = self.val_writer = SummaryWriter(os.path.join(arg.model_saved_name, 'test'), 'test')
+                tensorboard_dir = os.path.join(arg.work_dir, 'runs')
+                self.train_writer = self.val_writer = SummaryWriter(os.path.join(tensorboard_dir, 'test'), 'test')
         self.global_step = 0
         self.load_model()
 
@@ -875,11 +878,15 @@ class Processor():
         self.adjust_learning_rate(epoch)
 
         loss_value = []
+        loss_ce_value = []  # Classification loss
+        loss_te_value = []  # Contrastive loss
         acc_value = []
         self.train_writer.add_scalar('epoch', epoch, self.global_step)
         self.record_time()
         timer = dict(dataloader=0.001, model=0.001, statistics=0.001)
-        process = tqdm(loader, ncols=40)
+        process = tqdm(loader, ncols=100, desc=f'Epoch {epoch+1}', 
+                      miniters=1, mininterval=0.1, 
+                      bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}]')
 
         for batch_idx, (data, label, index) in enumerate(process):
             self.global_step += 1
@@ -924,7 +931,8 @@ class Processor():
                     loss_te_list.append((loss_imgs + loss_texts) / 2)
 
                 loss_ce = self.loss_ce(output, label)
-                loss = loss_ce + self.arg.loss_alpha * sum(loss_te_list) / len(loss_te_list)
+                loss_te_avg = sum(loss_te_list) / len(loss_te_list)  # Average contrastive loss
+                loss = loss_ce + self.arg.loss_alpha * loss_te_avg
 
             scaler.scale(loss).backward()
             scaler.step(self.optimizer)
@@ -933,14 +941,29 @@ class Processor():
             if self.global_step % 100 == 0:
                 torch.cuda.empty_cache()
 
+            # Track all loss components
             loss_value.append(loss.data.item())
+            loss_ce_value.append(loss_ce.data.item())
+            loss_te_value.append(loss_te_avg.data.item())
             timer['model'] += self.split_time()
 
             value, predict_label = torch.max(output.data, 1)
             acc = torch.mean((predict_label == label.data).float())
             acc_value.append(acc.data.item())
+            
+            # Log to tensorboard
             self.train_writer.add_scalar('acc', acc, self.global_step)
             self.train_writer.add_scalar('loss', loss.data.item(), self.global_step)
+            self.train_writer.add_scalar('loss_ce', loss_ce.data.item(), self.global_step)
+            self.train_writer.add_scalar('loss_te', loss_te_avg.data.item(), self.global_step)
+            
+            # Periodic logging of loss components
+            if self.global_step % self.arg.log_interval == 0:
+                self.print_log(
+                    'Batch[{}/{}]: Loss: {:.4f} (CE: {:.4f}, TE: {:.4f}), Acc: {:.2f}%'.format(
+                        batch_idx + 1, len(loader), 
+                        loss.data.item(), loss_ce.data.item(), loss_te_avg.data.item(),
+                        acc.data.item() * 100))
 
             self.lr = self.optimizer.param_groups[0]['lr']
             self.train_writer.add_scalar('lr', self.lr, self.global_step)
@@ -950,14 +973,23 @@ class Processor():
             k: '{:02d}%'.format(int(round(v * 100 / sum(timer.values()))))
             for k, v in timer.items()
         }
+        # Calculate mean losses
+        mean_loss = np.mean(loss_value)
+        mean_loss_ce = np.mean(loss_ce_value)
+        mean_loss_te = np.mean(loss_te_value)
+        mean_acc = np.mean(acc_value) * 100
+        
         self.print_log(
-            '\tMean training loss: {:.4f}.  Mean training acc: {:.2f}%.'.format(np.mean(loss_value), np.mean(acc_value)*100))
+            '\tMean training loss: {:.4f} (CE: {:.4f}, TE: {:.4f}).  Mean training acc: {:.2f}%.'.format(
+                mean_loss, mean_loss_ce, mean_loss_te, mean_acc))
         self.print_log('\tTime consumption: [Data]{dataloader}, [Network]{model}'.format(**proportion))
 
         if save_model:
             state_dict = self.model.state_dict()
             weights = OrderedDict([[k.split('module.')[-1], v.cpu()] for k, v in state_dict.items()])
-            torch.save(weights, self.arg.model_saved_name + '-' + str(epoch+1) + '-' + str(int(self.global_step)) + '.pt')
+            # Save model directly in work_dir with pattern: runs-{epoch}-{step}.pt
+            model_filename = os.path.join(self.arg.work_dir, 'runs-' + str(epoch+1) + '-' + str(int(self.global_step)) + '.pt')
+            torch.save(weights, model_filename)
 
     def eval(self, epoch, save_score=False, loader_name=['test'], wrong_file=None, result_file=None):
         if wrong_file is not None:
@@ -973,7 +1005,9 @@ class Processor():
             label_list = []
             pred_list = []
             step = 0
-            process = tqdm(self.data_loader[ln], ncols=40)
+            process = tqdm(self.data_loader[ln], ncols=100, desc=f'Evaluating {ln}',
+                          miniters=1, mininterval=0.1,
+                          bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}]')
             for batch_idx, (data, label, index) in enumerate(process):
                 label_list.append(label)
                 with torch.no_grad():
@@ -1006,15 +1040,17 @@ class Processor():
                 self.best_acc = accuracy
                 self.best_acc_epoch = epoch + 1
 
-            print('Accuracy: ', accuracy, ' model: ', self.arg.model_saved_name)
+            print('Accuracy: ', accuracy, ' model: ', self.arg.work_dir)
             if self.arg.phase == 'train':
                 self.val_writer.add_scalar('loss', loss, self.global_step)
                 self.val_writer.add_scalar('acc', accuracy, self.global_step)
 
             score_dict = dict(
                 zip(self.data_loader[ln].dataset.sample_name, score))
-            self.print_log('\tMean {} loss of {} batches: {}.'.format(
-                ln, len(self.data_loader[ln]), np.mean(loss_value)))
+            # For eval, we only have classification loss (no contrastive loss)
+            mean_loss = np.mean(loss_value)
+            self.print_log('\tMean {} loss of {} batches: {:.4f} (classification only).'.format(
+                ln, len(self.data_loader[ln]), mean_loss))
             for k in self.arg.show_topk:
                 self.print_log('\tTop{}: {:.2f}%'.format(
                     k, 100 * self.data_loader[ln].dataset.top_k(score, k)))
@@ -1050,7 +1086,30 @@ class Processor():
                 self.train(epoch, save_model=save_model)
                 self.eval(epoch, save_score=self.arg.save_score, loader_name=['test'])
 
-            weights_path = glob.glob(os.path.join(self.arg.work_dir, 'runs-'+str(self.best_acc_epoch)+'*'))[0]
+            # Find the best model weights file
+            if self.best_acc_epoch > 0:
+                # Look for model file matching best accuracy epoch
+                weights_files = glob.glob(os.path.join(self.arg.work_dir, 'runs-'+str(self.best_acc_epoch)+'*'))
+                if not weights_files:
+                    # Fallback: find all model files and use the most recent one
+                    self.print_log(f'Warning: Model file for epoch {self.best_acc_epoch} not found. Searching for available models...')
+                    all_weights = glob.glob(os.path.join(self.arg.work_dir, 'runs-*.pt'))
+                    if all_weights:
+                        # Sort by modification time and use the most recent
+                        weights_files = [max(all_weights, key=os.path.getmtime)]
+                        self.print_log(f'Using most recent model: {os.path.basename(weights_files[0])}')
+                    else:
+                        raise FileNotFoundError(f'No model weights found in {self.arg.work_dir}. Training may not have saved any models.')
+                weights_path = weights_files[0]
+            else:
+                # No best epoch recorded, use the most recent model file
+                self.print_log('Warning: No best accuracy epoch recorded. Using most recent model file.')
+                all_weights = glob.glob(os.path.join(self.arg.work_dir, 'runs-*.pt'))
+                if not all_weights:
+                    raise FileNotFoundError(f'No model weights found in {self.arg.work_dir}. Training may not have saved any models.')
+                weights_path = max(all_weights, key=os.path.getmtime)
+                self.print_log(f'Using most recent model: {os.path.basename(weights_path)}')
+            
             weights = torch.load(weights_path)
             if type(self.arg.device) is list:
                 if len(self.arg.device) > 1:
