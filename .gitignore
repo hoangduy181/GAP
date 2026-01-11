@@ -138,3 +138,6 @@ clip/__pycache__/
 
 ## script
 train.sh
+
+## unknown folders
+test/
