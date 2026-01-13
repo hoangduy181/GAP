@@ -6,6 +6,10 @@ data_config:
 processing:
   video_dir: data/multiview_action_videos  # Root directory containing action class folders (a01, a02, etc.)
   output_dir: data/yolo_ucla_json  # Output directory for preprocessed JSON files
+  split_file_dir: data/ucla_splits  # Directory containing train_split.json and val_split.json
+  # Note: Split files are created using create_ucla_split.py with --train-ratio parameter
+  # Default is 0.7 (70% train, 30% val). To change split ratio, regenerate split files:
+  # python create_ucla_split.py --video-dir data/multiview_action_videos --output-dir data/ucla_splits --train-ratio 0.8
   yolo_model_path: yolo11n-pose.pt
   yolo_conf_threshold: 0.25
   yolo_device: null  # null for auto, 'cuda' or 'cpu'

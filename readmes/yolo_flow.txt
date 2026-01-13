@@ -1,0 +1,26 @@
+# 1. Preprocess videos (extract skeletons)
+python main_multipart_yolo.py --mode preprocess --config config/ntu60_yolo.yaml
+
+# 2. Preprocess with debug mode (first 100 samples)
+python main_multipart_yolo.py --mode preprocess --config config/ntu60_yolo.yaml --debug
+
+# 3. Train model
+python main_multipart_yolo.py --mode train --config config/ntu60_yolo.yaml
+
+# 4. Train with debug mode
+python main_multipart_yolo.py --mode train --config config/ntu60_yolo.yaml --debug
+
+# 5. Evaluate on single video
+python main_multipart_yolo.py --mode eval --config config/ntu60_yolo.yaml \
+    --eval-mode video --weights work_dir/ntu60_yolo/ctrgcn_joint/runs-65-1234.pt \
+    --video data/nturgb+d_rgb/S001C001P001R001A001_rgb.avi
+
+# 6. Evaluate on video list
+python main_multipart_yolo.py --mode eval --config config/ntu60_yolo.yaml \
+    --eval-mode video --weights work_dir/ntu60_yolo/ctrgcn_joint/runs-65-1234.pt \
+    --video-list video_list.txt --save-score
+
+# 7. Evaluate on skeleton JSON files
+python main_multipart_yolo.py --mode eval --config config/ntu60_yolo.yaml \
+    --eval-mode skeleton --weights work_dir/ntu60_yolo/ctrgcn_joint/runs-65-1234.pt \
+    --skeleton-dir data/ntu60_json/val --save-score

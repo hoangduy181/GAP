@@ -232,7 +232,13 @@ def process_videos(video_dir: str, output_dir: str, split: str,
         
         # Process video
         try:
-            keypoints_list, metadata = detector.detect_video(video_path)
+            # In debug mode, also return frames for visualization
+            return_frames = debug
+            if return_frames:
+                keypoints_list, metadata, frames = detector.detect_video(video_path, return_frames=True)
+            else:
+                keypoints_list, metadata = detector.detect_video(video_path, return_frames=False)
+                frames = None
             
             # Convert keypoints to format similar to UCLA JSON structure
             # UCLA format: skeletons is a list of frames, each frame is (20, 3) for 20 joints
@@ -262,6 +268,39 @@ def process_videos(video_dir: str, output_dir: str, split: str,
             
             with open(output_file, 'w') as f:
                 json.dump(output_data, f, indent=2)
+            
+            # Debug mode: Save visualization
+            if debug and frames is not None:
+                try:
+                    from yolo_pose.visualization import visualize_keypoints_on_video, save_keypoint_frames
+                    
+                    # Create visualization directory
+                    vis_dir = os.path.join(output_dir, 'visualizations')
+                    os.makedirs(vis_dir, exist_ok=True)
+                    
+                    # Option 1: Save video with skeleton overlay
+                    vis_video_path = os.path.join(vis_dir, f"{full_file_name}_skeleton.mp4")
+                    visualize_keypoints_on_video(
+                        video_path=video_path,
+                        keypoints_list=keypoints_list,
+                        output_path=vis_video_path,
+                        fps=metadata.get('fps', 30.0),
+                        conf_threshold=yolo_conf_threshold
+                    )
+                    
+                    # Option 2: Save sample frames (every 10th frame)
+                    vis_frames_dir = os.path.join(vis_dir, f"{full_file_name}_frames")
+                    save_keypoint_frames(
+                        video_path=video_path,
+                        keypoints_list=keypoints_list,
+                        output_dir=vis_frames_dir,
+                        sample_interval=10,  # Save every 10th frame
+                        conf_threshold=yolo_conf_threshold
+                    )
+                    
+                    print(f"  Debug: Visualization saved to {vis_dir}")
+                except Exception as e:
+                    print(f"  Warning: Failed to create visualization: {e}")
             
             # Add to data_dict
             data_dict.append({
@@ -1146,6 +1185,256 @@ class Processor():
             self.print_log('Done.\n')
 
 
+def run_eval_ske(config_path: str, weights_path: str, video_path: str = None, 
+                 video_list_path: str = None, save_score: bool = False,
+                 yolo_model_path: str = 'yolo11n-pose.pt',
+                 yolo_conf_threshold: float = 0.25,
+                 yolo_device: str = None,
+                 yolo_tracking_strategy: str = 'largest_bbox'):
+    """
+    Evaluate model on video(s) using skeleton keypoints extracted with YOLO.
+    
+    Args:
+        config_path: Path to config file
+        weights_path: Path to trained model weights
+        video_path: Path to single video file (optional)
+        video_list_path: Path to text file with video paths, one per line (optional)
+        save_score: Whether to save prediction scores
+        yolo_model_path: Path to YOLO model weights
+        yolo_conf_threshold: YOLO confidence threshold
+        yolo_device: Device for YOLO inference
+        yolo_tracking_strategy: Strategy for person selection
+    """
+    if not video_path and not video_list_path:
+        raise ValueError("Either --video or --video-list must be provided")
+    
+    # Load config
+    with open(config_path, 'r') as f:
+        config_data = yaml.safe_load(f)
+    
+    training_config = config_data.get('training', {})
+    if not training_config:
+        raise ValueError("No 'training' section found in config file")
+    
+    # Get video paths
+    video_paths = []
+    if video_path:
+        if not os.path.exists(video_path):
+            raise FileNotFoundError(f"Video file not found: {video_path}")
+        video_paths.append(video_path)
+    if video_list_path:
+        if not os.path.exists(video_list_path):
+            raise FileNotFoundError(f"Video list file not found: {video_list_path}")
+        with open(video_list_path, 'r') as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith('#'):
+                    if os.path.exists(line):
+                        video_paths.append(line)
+                    else:
+                        print(f"Warning: Video file not found: {line}")
+    
+    if not video_paths:
+        raise ValueError("No valid video files found")
+    
+    print(f"Found {len(video_paths)} video(s) to evaluate")
+    
+    # Load model configuration
+    model_class = training_config.get('model')
+    model_args = training_config.get('model_args', {})
+    
+    if not model_class:
+        raise ValueError("'model' not specified in config")
+    
+    # Set device
+    if yolo_device is None:
+        yolo_device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    
+    device_list = training_config.get('device', [0])
+    if isinstance(device_list, list) and len(device_list) > 0:
+        output_device = device_list[0]
+    else:
+        output_device = 0
+    
+    print(f"Using device: {yolo_device} (YOLO), GPU {output_device} (Model)")
+    
+    # Load model
+    Model = import_class(model_class)
+    model_args_for_model = {k: v for k, v in model_args.items() if k != 'head'}
+    model = Model(**model_args_for_model)
+    model = model.cuda(output_device) if torch.cuda.is_available() else model
+    
+    # Load weights
+    print(f"Loading weights from: {weights_path}")
+    if not os.path.exists(weights_path):
+        raise FileNotFoundError(f"Weights file not found: {weights_path}")
+    
+    weights = torch.load(weights_path, map_location=f'cuda:{output_device}' if torch.cuda.is_available() else 'cpu')
+    
+    # Handle DataParallel weights
+    if any(k.startswith('module.') for k in weights.keys()):
+        weights = {k.replace('module.', ''): v for k, v in weights.items()}
+    
+    model.load_state_dict(weights)
+    model.eval()
+    print("Model loaded successfully")
+    
+    # Initialize YOLO detector
+    detector = YOLOPoseDetector(
+        model_path=yolo_model_path,
+        conf_threshold=yolo_conf_threshold,
+        device=yolo_device,
+        tracking_strategy=yolo_tracking_strategy
+    )
+    
+    # Get window_size from config
+    test_feeder_args = training_config.get('test_feeder_args', {})
+    window_size = test_feeder_args.get('window_size', 52)
+    
+    # Create feeder instance for conversion utilities
+    from feeders.feeder_yolo_pose_ucla import Feeder
+    feeder = Feeder(
+        data_path="",
+        label_path="test",
+        split="test",
+        window_size=window_size,
+        debug=False,
+        random_choose=False,
+        repeat=1,
+        yolo_model_path=yolo_model_path,
+        use_cache=False
+    )
+    
+    # Process each video
+    all_predictions = []
+    all_scores = []
+    
+    print("\n" + "="*60)
+    print("Evaluating videos...")
+    print("="*60)
+    
+    for idx, vid_path in enumerate(tqdm(video_paths, desc="Processing videos")):
+        print(f"\n[{idx+1}/{len(video_paths)}] Processing: {os.path.basename(vid_path)}")
+        
+        # Extract keypoints with YOLO
+        keypoints_list, metadata = detector.detect_video(vid_path, return_frames=False)
+        print(f"  Extracted {len(keypoints_list)} frames")
+        
+        if len(keypoints_list) == 0:
+            print(f"  Warning: No keypoints extracted from {vid_path}")
+            all_predictions.append((vid_path, None, None))
+            continue
+        
+        # Convert to CTR-GCN format
+        keypoints_array = feeder._yolo_to_ctrgcn_format(keypoints_list)
+        
+        # Apply temporal cropping/resizing
+        from feeders import tools
+        valid_frame_num = np.sum(keypoints_array.sum(0).sum(-1).sum(-1) != 0)
+        if valid_frame_num == 0:
+            print(f"  Warning: No valid frames in {vid_path}")
+            all_predictions.append((vid_path, None, None))
+            continue
+        
+        keypoints_array = tools.valid_crop_resize(
+            keypoints_array,
+            valid_frame_num,
+            [0.95],  # Center crop for inference
+            window_size
+        )
+        
+        # Add batch dimension: (1, 2, T, 17, 1)
+        keypoints_tensor = torch.from_numpy(keypoints_array).float().unsqueeze(0)
+        
+        # Move to device
+        if torch.cuda.is_available():
+            keypoints_tensor = keypoints_tensor.cuda(output_device)
+        
+        # Run inference
+        with torch.no_grad():
+            with torch.cuda.amp.autocast() if torch.cuda.is_available() else torch.no_grad():
+                output, _, _, _ = model(keypoints_tensor)
+        
+        # Get predictions
+        probabilities = torch.softmax(output, dim=1)
+        confidence, predicted_class = torch.max(probabilities, 1)
+        
+        predicted_class = predicted_class.item()
+        confidence = confidence.item()
+        all_class_scores = probabilities[0].cpu().numpy()
+        
+        all_predictions.append((vid_path, predicted_class, confidence))
+        all_scores.append(all_class_scores)
+        
+        print(f"  Predicted class: {predicted_class}, Confidence: {confidence:.4f} ({confidence*100:.2f}%)")
+    
+    # Print summary
+    print("\n" + "="*60)
+    print("EVALUATION SUMMARY")
+    print("="*60)
+    for vid_path, pred_class, conf in all_predictions:
+        if pred_class is not None:
+            print(f"{os.path.basename(vid_path)}: Class {pred_class} (Conf: {conf:.4f})")
+        else:
+            print(f"{os.path.basename(vid_path)}: FAILED (no keypoints)")
+    
+    # Save scores if requested
+    if save_score:
+        output_file = weights_path.replace('.pt', '_eval_scores.txt')
+        with open(output_file, 'w') as f:
+            f.write("Video Path,Predicted Class,Confidence,All Class Scores\n")
+            for (vid_path, pred_class, conf), scores in zip(all_predictions, all_scores):
+                if pred_class is not None:
+                    scores_str = ','.join([f"{s:.6f}" for s in scores])
+                    f.write(f"{vid_path},{pred_class},{conf:.6f},{scores_str}\n")
+        print(f"\nScores saved to: {output_file}")
+    
+    print("="*60)
+
+
+def run_eval_rgb(config_path: str, weights_path: str, video_path: str = None,
+                 video_list_path: str = None, save_score: bool = False,
+                 yolo_model_path: str = 'yolo11n-pose.pt',
+                 yolo_conf_threshold: float = 0.25,
+                 yolo_device: str = None,
+                 yolo_tracking_strategy: str = 'largest_bbox'):
+    """
+    Evaluate model on video(s) using RGB frames (extracts skeleton with YOLO first).
+    
+    Note: Currently, eval-rgb uses the same skeleton-based approach as eval-ske
+    since the model expects skeleton keypoints. This function is kept for future
+    RGB-based model support.
+    
+    Args:
+        config_path: Path to config file
+        weights_path: Path to trained model weights
+        video_path: Path to single video file (optional)
+        video_list_path: Path to text file with video paths, one per line (optional)
+        save_score: Whether to save prediction scores
+        yolo_model_path: Path to YOLO model weights
+        yolo_conf_threshold: YOLO confidence threshold
+        yolo_device: Device for YOLO inference
+        yolo_tracking_strategy: Strategy for person selection
+    """
+    # For now, eval-rgb uses the same skeleton extraction as eval-ske
+    # This is because the current model expects skeleton keypoints
+    print("Note: eval-rgb mode currently uses skeleton extraction (same as eval-ske)")
+    print("      since the model expects skeleton keypoints as input.")
+    print()
+    
+    run_eval_ske(
+        config_path=config_path,
+        weights_path=weights_path,
+        video_path=video_path,
+        video_list_path=video_list_path,
+        save_score=save_score,
+        yolo_model_path=yolo_model_path,
+        yolo_conf_threshold=yolo_conf_threshold,
+        yolo_device=yolo_device,
+        yolo_tracking_strategy=yolo_tracking_strategy
+    )
+
+
 def run_training(config_path: str, debug: bool = False):
     """
     Run training mode using Processor.
@@ -1291,9 +1580,40 @@ def get_parser():
     parser.add_argument(
         '--mode',
         type=str,
-        choices=['process', 'train'],
+        choices=['process', 'train', 'eval-ske', 'eval-rgb'],
         default=None,
-        help='Mode: process (extract keypoints) or train (run training). Auto-detected if not specified.')
+        help='Mode: process (extract keypoints), train (run training), eval-ske (evaluate on videos with skeleton), or eval-rgb (evaluate on videos with RGB). Auto-detected if not specified.')
+    
+    parser.add_argument(
+        '--phase',
+        type=str,
+        choices=['train', 'test'],
+        default='train',
+        help='Phase: train or test (for train mode, used internally)')
+    
+    parser.add_argument(
+        '--weights',
+        type=str,
+        default=None,
+        help='Path to trained model weights (.pt file) for test/eval modes')
+    
+    parser.add_argument(
+        '--save-score',
+        type=str2bool,
+        default=False,
+        help='If true, the classification score will be stored (for test/eval modes)')
+    
+    parser.add_argument(
+        '--video',
+        type=str,
+        default=None,
+        help='Path to single video file (for eval-ske/eval-rgb modes)')
+    
+    parser.add_argument(
+        '--video-list',
+        type=str,
+        default=None,
+        help='Path to text file containing list of video paths (one per line) for eval modes')
     
     parser.add_argument(
         '--video-dir',
@@ -1439,109 +1759,101 @@ if __name__ == '__main__':
         if debug_mode:
             print("DEBUG MODE: Will process only 1/5 of videos for faster testing")
         
-        # Try to load data.json to get split information
-        split_file_dir = 'data/ucla_splits'  # Default
-        if data_json_path and os.path.exists(data_json_path):
-            # Use data.json to determine which videos to process
-            with open(data_json_path, 'r') as f:
-                data_json = json.load(f)
+        # Always use split files to determine which videos belong to which split
+        # This ensures proper train/val separation
+        # Get split_file_dir from config or use default
+        split_file_dir = prep_config.get('split_file_dir', 'data/ucla_splits')
+        
+        for split in splits_to_process:
+            print(f"\n{'='*60}")
+            print(f"Processing {split} split...")
+            print(f"{'='*60}")
             
-            # Process each split
-            for split in splits_to_process:
-                print(f"\n{'='*60}")
-                print(f"Processing {split} split...")
-                print(f"{'='*60}")
-                
-                output_dir = os.path.join(output_dir_base, split)
-                split_data = data_json.get(split, [])
-                
-                # Debug mode: reduce to 1/5
-                if debug_mode and len(split_data) > 5:
-                    original_count = len(split_data)
-                    split_data = split_data[::5]  # Take every 5th item
-                    print(f"DEBUG MODE: Reduced {split} split from {original_count} to {len(split_data)} items (1/5)")
-                
-                if split_data:
-                    # Extract video paths from data.json
-                    video_list = []
-                    for item in split_data:
-                        json_path = item.get('json_path', '')
-                        # If JSON file already exists, skip (unless overwrite)
-                        if os.path.exists(json_path) and not overwrite:
-                            continue
-                        
-                        # Try to find video file from json_path
-                        # json_path format: data/yolo_ucla_json/train/a01_v01_s01_e00.json
-                        # Need to find original video
-                        full_file_name = item.get('full_file_name', '')
-                        # Try to construct video path
-                        # Assume videos are in video_dir with action folders
-                        if full_file_name.startswith('a'):
-                            action_dir = full_file_name.split('_')[0]
-                            video_name = '_'.join(full_file_name.split('_')[1:])
-                            video_path = os.path.join(video_dir, action_dir, f"{video_name}.avi")
-                            if not os.path.exists(video_path):
-                                # Try other extensions
-                                for ext in ['.mp4', '.mov', '.mkv']:
-                                    alt_path = os.path.join(video_dir, action_dir, f"{video_name}{ext}")
-                                    if os.path.exists(alt_path):
-                                        video_path = alt_path
-                                        break
-                            
-                            if os.path.exists(video_path):
-                                video_list.append({
-                                    'path': video_path,
-                                    'name': video_name,
-                                    'full_file_name': full_file_name,
-                                    'label': item.get('label', 0)
-                                })
-                    
-                    if video_list:
-                        # Process videos
-                        process_videos(
-                            video_dir=video_dir,
-                            output_dir=output_dir,
-                            split=split,
-                            yolo_model_path=yolo_model_path,
-                            yolo_conf_threshold=yolo_conf_threshold,
-                            yolo_device=yolo_device,
-                            yolo_tracking_strategy=yolo_tracking_strategy,
-                            overwrite=overwrite,
-                            split_file=None,  # Not using split_file when using data.json
-                            data_json_path=data_json_path,
-                            debug=debug_mode
-                        )
-                    else:
-                        print(f"No videos to process for {split} split (all JSON files exist)")
-                else:
-                    print(f"No data found in data.json for {split} split")
-        else:
-            # Fallback to old method using split files
-            print("Warning: data.json not found, using split files (legacy mode)")
-            split_file_dir = 'data/ucla_splits'
+            output_dir = os.path.join(output_dir_base, split)
+            split_file = os.path.join(split_file_dir, f'{split}_split.json')
             
-            for split in splits_to_process:
-                print(f"\n{'='*60}")
-                print(f"Processing {split} split...")
-                print(f"{'='*60}")
-                
-                output_dir = os.path.join(output_dir_base, split)
-                split_file = os.path.join(split_file_dir, f'{split}_split.json')
-                
-                process_videos(
-                    video_dir=video_dir,
-                    output_dir=output_dir,
-                    split=split,
-                    yolo_model_path=yolo_model_path,
-                    yolo_conf_threshold=yolo_conf_threshold,
-                    yolo_device=yolo_device,
-                    yolo_tracking_strategy=yolo_tracking_strategy,
-                    overwrite=overwrite,
-                    split_file=split_file if os.path.exists(split_file) else None,
-                    data_json_path=data_json_path,
-                    debug=debug_mode
-                )
+            if not os.path.exists(split_file):
+                print(f"Warning: Split file not found: {split_file}")
+                print(f"  Skipping {split} split. Please create split files using create_ucla_split.py")
+                continue
+            
+            print(f"Using split file: {split_file}")
+            process_videos(
+                video_dir=video_dir,
+                output_dir=output_dir,
+                split=split,
+                yolo_model_path=yolo_model_path,
+                yolo_conf_threshold=yolo_conf_threshold,
+                yolo_device=yolo_device,
+                yolo_tracking_strategy=yolo_tracking_strategy,
+                overwrite=overwrite,
+                split_file=split_file,
+                data_json_path=data_json_path,  # Will update data.json after processing
+                debug=debug_mode
+            )
         
         print("\n" + "="*60)
         print("Processing complete!")
         print("="*60)
+    
+    elif mode == 'eval-ske':
+        # Evaluation mode with skeleton keypoints
+        if not args.config:
+            raise ValueError("--config is required for eval-ske mode")
+        if not args.weights:
+            raise ValueError("--weights is required for eval-ske mode")
+        
+        # Get YOLO parameters from config or args
+        prep_config = config_data.get('processing', {})
+        yolo_model_path = getattr(args, 'yolo_model_path', None) or prep_config.get('yolo_model_path', 'yolo11n-pose.pt')
+        yolo_conf_threshold = getattr(args, 'yolo_conf_threshold', None)
+        if yolo_conf_threshold is None:
+            yolo_conf_threshold = prep_config.get('yolo_conf_threshold', 0.25)
+        yolo_device = getattr(args, 'yolo_device', None)
+        if yolo_device is None:
+            yolo_device = prep_config.get('yolo_device')
+        yolo_tracking_strategy = getattr(args, 'yolo_tracking_strategy', None) or prep_config.get('yolo_tracking_strategy', 'largest_bbox')
+        
+        print("Running in EVAL-SKE mode (skeleton-based evaluation)...")
+        run_eval_ske(
+            config_path=args.config,
+            weights_path=args.weights,
+            video_path=getattr(args, 'video', None),
+            video_list_path=getattr(args, 'video_list', None),
+            save_score=getattr(args, 'save_score', False),
+            yolo_model_path=yolo_model_path,
+            yolo_conf_threshold=yolo_conf_threshold,
+            yolo_device=yolo_device,
+            yolo_tracking_strategy=yolo_tracking_strategy
+        )
+    
+    elif mode == 'eval-rgb':
+        # Evaluation mode with RGB (currently uses skeleton extraction)
+        if not args.config:
+            raise ValueError("--config is required for eval-rgb mode")
+        if not args.weights:
+            raise ValueError("--weights is required for eval-rgb mode")
+        
+        # Get YOLO parameters from config or args
+        prep_config = config_data.get('processing', {})
+        yolo_model_path = getattr(args, 'yolo_model_path', None) or prep_config.get('yolo_model_path', 'yolo11n-pose.pt')
+        yolo_conf_threshold = getattr(args, 'yolo_conf_threshold', None)
+        if yolo_conf_threshold is None:
+            yolo_conf_threshold = prep_config.get('yolo_conf_threshold', 0.25)
+        yolo_device = getattr(args, 'yolo_device', None)
+        if yolo_device is None:
+            yolo_device = prep_config.get('yolo_device')
+        yolo_tracking_strategy = getattr(args, 'yolo_tracking_strategy', None) or prep_config.get('yolo_tracking_strategy', 'largest_bbox')
+        
+        print("Running in EVAL-RGB mode (RGB-based evaluation, using skeleton extraction)...")
+        run_eval_rgb(
+            config_path=args.config,
+            weights_path=args.weights,
+            video_path=getattr(args, 'video', None),
+            video_list_path=getattr(args, 'video_list', None),
+            save_score=getattr(args, 'save_score', False),
+            yolo_model_path=yolo_model_path,
+            yolo_conf_threshold=yolo_conf_threshold,
+            yolo_device=yolo_device,
+            yolo_tracking_strategy=yolo_tracking_strategy
+        )

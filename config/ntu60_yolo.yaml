@@ -1,0 +1,89 @@
+# Configuration file for NTU60 YOLO-based action recognition
+
+# Data configuration - references data.json file
+data_config:
+  data_json: data/ntu60_splits/data.json  # Path to data.json file containing video paths and splits
+
+# Processing configuration (for --mode preprocess)
+processing:
+  video_dir: data/nturgb+d_rgb  # Root directory containing video files
+  output_dir: data/ntu60_json  # Output directory for preprocessed JSON files
+  yolo_model_path: yolo11n-pose.pt
+  yolo_conf_threshold: 0.25
+  yolo_device: null  # null for auto, 'cuda' or 'cpu'
+  yolo_tracking_strategy: largest_bbox
+  overwrite: False  # Whether to overwrite existing preprocessed files
+
+# Training configuration (for --mode train)
+training:
+  work_dir: ./work_dir/ntu60_yolo/ctrgcn_joint
+  
+  # Feeder configuration
+  feeder: feeders.feeder_yolo_pose_ntu60.Feeder
+  
+  train_feeder_args:
+    data_path: data/ntu60_json  # Base directory (feeder will use data.json to find files)
+    split: train
+    debug: False  # Set to True to use only first 100 samples
+    random_choose: True
+    random_shift: False
+    random_move: False
+    window_size: 64
+    normalization: False
+    random_rot: False
+    p_interval: [0.5, 1]
+    vel: False
+    bone: False
+    repeat: 5
+    yolo_model_path: yolo11n-pose.pt
+    yolo_conf_threshold: 0.25
+    yolo_device: null
+    yolo_tracking_strategy: largest_bbox
+    cache_dir: data/yolo_cache/ntu60/train
+    use_cache: True
+    data_json_path: data/ntu60_splits/data.json  # Explicit path to data.json
+  
+  test_feeder_args:
+    data_path: data/ntu60_json
+    split: val  # Use 'val' split for validation
+    window_size: 64
+    p_interval: [0.95]
+    vel: False
+    bone: False
+    debug: False  # Set to True to use only first 100 samples
+    repeat: 1
+    yolo_model_path: yolo11n-pose.pt
+    yolo_conf_threshold: 0.25
+    yolo_device: null
+    yolo_tracking_strategy: largest_bbox
+    cache_dir: data/yolo_cache/ntu60/val
+    use_cache: True
+    data_json_path: data/ntu60_splits/data.json  # Explicit path to data.json
+  
+  model: model.ctrgcn.Model_lst_4part
+  model_args:
+    num_class: 60  # NTU60 has 60 action classes
+    num_point: 17  # YOLO provides 17 joints
+    num_person: 1
+    in_channels: 2  # YOLO provides (x, y) coordinates only (2 channels)
+    graph: graph.joint17.Graph
+    graph_args:
+      labeling_mode: 'spatial'
+    head: ['ViT-B/32']  # CLIP head for contrastive learning
+    k: 1  # Parameter for A_vector computation
+  
+  weight_decay: 0.0001
+  base_lr: 0.1
+  lr_decay_rate: 0.1
+  step: [50]
+  warm_up_epoch: 5
+  device: [0]
+  batch_size: 16
+  test_batch_size: 64
+  num_epoch: 65
+  nesterov: True
+  num_worker: 4
+  save_interval: 10
+  eval_interval: 5
+  log_interval: 100
+  phase: train

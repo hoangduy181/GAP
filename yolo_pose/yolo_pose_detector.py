@@ -1,7 +1,7 @@
 """YOLO Pose Detector for extracting 17-joint keypoints from videos."""
 
 import numpy as np
-from typing import List, Optional, Tuple, Dict
+from typing import List, Optional, Tuple, Dict, Union
 from ultralytics import YOLO
 import torch
 from collections import defaultdict
@@ -64,7 +64,8 @@ class YOLOPoseDetector:
             - 'conf': confidence score
             - 'track_id': tracking ID (if tracking enabled)
         """
-        results = self.model(frame, conf=self.conf_threshold, verbose=False)
+        # save=False prevents YOLO from creating runs/pose/predict{n} output directories
+        results = self.model(frame, conf=self.conf_threshold, verbose=False, save=False)
         
         detections = []
         for result in results:
@@ -163,18 +164,21 @@ class YOLOPoseDetector:
         return None
     
     def detect_video(self, video_path: str, 
-                    use_tracking: bool = True) -> Tuple[List[np.ndarray], Dict]:
+                    use_tracking: bool = True,
+                    return_frames: bool = False) -> Union[Tuple[List[np.ndarray], Dict], Tuple[List[np.ndarray], Dict, List[np.ndarray]]]:
         """
         Process video file to extract keypoints for the main person.
         
         Args:
             video_path: Path to video file
             use_tracking: Whether to use tracking across frames
+            return_frames: If True, also return the original frames for visualization
         
         Returns:
             Tuple of:
             - keypoints_list: List of keypoint arrays, each (17, 3) [x, y, confidence]
             - metadata: Dictionary with video metadata
+            - frames: List of frames (only if return_frames=True, otherwise None)
         """
         # Get video metadata
         metadata = get_video_metadata(video_path)
@@ -220,7 +224,11 @@ class YOLOPoseDetector:
                 # Create zero keypoints if no detection
                 keypoints_list.append(np.zeros((17, 3), dtype=np.float32))
         
-        return keypoints_list, metadata
+        if return_frames:
+            return keypoints_list, metadata, frames
+        else:
+            # Backward compatibility: return only 2 values when return_frames=False
+            return keypoints_list, metadata
     
     def track_persons(self, video_path: str) -> List[np.ndarray]:
         """
@@ -237,7 +245,8 @@ class YOLOPoseDetector:
             source=video_path,
             conf=self.conf_threshold,
             persist=True,
-            verbose=False
+            verbose=False,
+            save=False  # Disable saving output files to prevent runs/pose/predict{n} folders
         )
         
         keypoints_list = []
