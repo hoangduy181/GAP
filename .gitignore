@@ -140,4 +140,7 @@ clip/__pycache__/
 train.sh
 
 ## unknown folders
-test/
+test/   
+
+validation_tools/**.avi
+validation_tools/**.pt
